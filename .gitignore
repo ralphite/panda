@@ -1,0 +1,7 @@
+data/
+panda
+web/dist/
+web/node_modules/
+web/storybook-static/
+web/tsconfig.tsbuildinfo
+

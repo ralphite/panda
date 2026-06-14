@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Panda Screenshot",
+  "version": "0.1.0",
+  "description": "Capture a full page screenshot, crop it, and upload it to Panda.",
+  "action": {
+    "default_title": "Capture with Panda"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["activeTab", "scripting", "storage", "tabs"],
+  "host_permissions": ["http://localhost:8086/*", "<all_urls>"]
+}
+

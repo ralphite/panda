@@ -1,0 +1,32 @@
+# Panda Screenshot
+
+Panda Screenshot is a local screenshot capture and annotation app.
+
+## Run
+
+```bash
+npm --prefix web install
+npm --prefix web run build
+go run ./cmd/panda -addr :8086
+```
+
+Open http://localhost:8086/screenshot.
+
+## Chrome Extension
+
+1. Open `chrome://extensions`.
+2. Enable Developer Mode.
+3. Load unpacked extension from `extension/`.
+4. Keep the Panda server running on `http://localhost:8086`.
+5. Click the extension icon on any normal page. It captures the full page, opens a crop tab before the source tab, uploads the crop, then replaces that tab with the web editor.
+
+## Keyboard
+
+- `V` select
+- `R` rectangle
+- `O` oval
+- `L` line
+- `T` text
+- `Delete` remove selection
+- `Cmd/Ctrl+C` copy annotated image
+
