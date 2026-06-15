@@ -1,3 +1,4 @@
 # Repository Instructions
 
-- After the task is done, create a commit with a very dry and succinct message.
+- Only create a commit when the user explicitly says `commit`.
+- When creating a commit, use a very dry and succinct message.
