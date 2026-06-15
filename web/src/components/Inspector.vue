@@ -55,21 +55,7 @@
       </section>
 
       <section v-else class="space-y-4">
-        <div>
-          <div class="text-xs font-semibold uppercase text-slate-400">Export</div>
-          <div class="mt-3 grid grid-cols-2 gap-2">
-            <button class="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white text-sm font-medium text-neutral-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" type="button" title="Copy image (C)" :disabled="!canExport" @click="$emit('copy')">
-              <Copy :size="15" />
-              Copy
-            </button>
-            <button class="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-blue-600 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40" type="button" :disabled="!canExport" @click="$emit('download')">
-              <Download :size="15" />
-              Save
-            </button>
-          </div>
-        </div>
-
-        <div v-if="screenshot" class="space-y-2 border-t border-slate-200 pt-4 text-sm">
+        <div v-if="screenshot" class="space-y-2 text-sm">
           <div class="flex justify-between gap-3">
             <span class="text-slate-500">Size</span>
             <span class="font-medium text-neutral-900">{{ screenshot.width }} x {{ screenshot.height }}</span>
@@ -86,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-import { Copy, Download, Trash2 } from '@lucide/vue';
+import { Trash2 } from '@lucide/vue';
 import NumberField from './NumberField.vue';
 import type { Annotation, AnnotationPatch, ScreenshotDetail } from '../types';
 
@@ -94,14 +80,11 @@ defineProps<{
   annotation: Annotation | null;
   screenshot: ScreenshotDetail | null;
   annotationCount: number;
-  canExport: boolean;
 }>();
 
 const emit = defineEmits<{
   patch: [AnnotationPatch];
   delete: [];
-  copy: [];
-  download: [];
 }>();
 
 function patch(value: AnnotationPatch): void {

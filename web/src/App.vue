@@ -43,11 +43,8 @@
         :annotation="selectedAnnotation"
         :screenshot="activeScreenshot"
         :annotation-count="annotations.length"
-        :can-export="Boolean(activeScreenshot)"
         @patch="patchSelected"
         @delete="deleteSelected"
-        @copy="copyImage"
-        @download="downloadImage"
       />
     </div>
 

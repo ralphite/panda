@@ -30,7 +30,6 @@ const meta: Meta<typeof Inspector> = {
       pageUrl: '/screenshot/shot',
     },
     annotationCount: 3,
-    canExport: true,
   },
 };
 
@@ -38,4 +37,3 @@ export default meta;
 type Story = StoryObj<typeof Inspector>;
 
 export const Rectangle: Story = {};
-
