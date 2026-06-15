@@ -18,11 +18,13 @@
         v-else
         class="relative mx-auto bg-white shadow-panel"
         :style="stageStyle"
+        @mousedown="onStageMouseDown"
+        @click="onStageClick"
       >
         <canvas
           ref="canvasRef"
-          class="absolute inset-0 cursor-crosshair select-none"
-          :class="{ 'cursor-default': tool === 'select' }"
+          class="absolute inset-0 select-none"
+          :class="canvasCursorClass"
           :width="canvasSize.width"
           :height="canvasSize.height"
           :style="canvasStyle"
@@ -35,11 +37,12 @@
           v-if="textDraft"
           ref="textInputRef"
           v-model="textDraft.value"
-          class="absolute resize-none overflow-hidden rounded-md border border-blue-300 bg-white px-2 py-1 font-semibold text-neutral-950 shadow-lg outline-none ring-2 ring-blue-100"
-          placeholder="Text"
+          aria-label="Text"
+          class="absolute cursor-text resize-none overflow-hidden rounded-md border border-blue-300 bg-white px-2 py-1 font-semibold shadow-lg outline-none ring-2 ring-blue-100"
           spellcheck="false"
           wrap="off"
           :style="textDraftStyle"
+          @keydown.stop
           @keydown.esc.prevent="commitText"
           @blur="commitText"
         />
@@ -61,7 +64,7 @@ import {
   normalizeBounds,
 } from '../lib/editor';
 import { fitZoomForBounds } from '../lib/zoom';
-import type { Annotation, Point, ScreenshotDetail, Tool } from '../types';
+import type { Annotation, Point, ScreenshotDetail, TextAnnotation, Tool } from '../types';
 
 const props = defineProps<{
   screenshot: ScreenshotDetail | null;
@@ -89,7 +92,21 @@ const canvasRef = ref<HTMLCanvasElement | null>(null);
 const textInputRef = ref<HTMLTextAreaElement | null>(null);
 const imageRef = shallowRef<HTMLImageElement | null>(null);
 const canvasSize = ref({ width: 1, height: 1 });
-const textDraft = ref<{ point: Point; value: string } | null>(null);
+
+const minTextEditorWidth = 120;
+const textEditorPaddingWidth = 24;
+const textEditorPaddingHeight = 10;
+
+interface TextDraft {
+  annotationId: string | null;
+  point: Point;
+  value: string;
+  color: string;
+  strokeWidth: number;
+  fontSize: number;
+}
+
+const textDraft = ref<TextDraft | null>(null);
 
 type PointerState =
   | { mode: 'draw'; id: string; start: Point }
@@ -108,22 +125,25 @@ const canvasStyle = computed(() => ({
   height: `${canvasSize.value.height * props.zoom}px`,
 }));
 
+const canvasCursorClass = computed(() => {
+  if (props.tool === 'select') return 'cursor-default';
+  if (props.tool === 'text') return 'cursor-text';
+  return 'cursor-crosshair';
+});
+
 const textDraftStyle = computed(() => {
-  if (!textDraft.value) return {};
-  const lines = textDraft.value.value.split('\n');
-  const longestLine = Math.max(4, ...lines.map((line) => line.length));
-  const left = textDraft.value.point.x * props.zoom;
-  const fontSize = props.fontSize * props.zoom;
-  const lineHeight = props.fontSize * 1.22 * props.zoom;
-  const desiredWidth = longestLine * props.fontSize * 0.62 * props.zoom + 24;
-  const maxWidth = Math.max(120, canvasSize.value.width * props.zoom - left - 8);
+  const draft = textDraft.value;
+  if (!draft) return {};
+  const layout = textDraftLayout(draft);
   return {
-    left: `${left}px`,
-    top: `${textDraft.value.point.y * props.zoom}px`,
-    width: `${clamp(desiredWidth, 120, maxWidth)}px`,
-    height: `${Math.max(lineHeight + 10, lines.length * lineHeight + 10)}px`,
-    fontSize: `${fontSize}px`,
-    lineHeight: `${lineHeight}px`,
+    left: `${layout.left}px`,
+    top: `${layout.top}px`,
+    width: `${layout.width}px`,
+    height: `${layout.height}px`,
+    fontSize: `${layout.fontSize}px`,
+    lineHeight: `${layout.lineHeight}px`,
+    color: draft.color,
+    caretColor: draft.color,
   };
 });
 
@@ -141,6 +161,13 @@ watch(
     render();
   },
   { deep: true },
+);
+
+watch(
+  () => textDraft.value?.annotationId ?? null,
+  () => {
+    render();
+  },
 );
 
 async function loadImage(): Promise<void> {
@@ -184,7 +211,10 @@ function render(): void {
   if (!canvas || !img) return;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
-  drawScene(ctx, img, props.annotations, props.selectedId);
+  const draft = textDraft.value;
+  const annotations = draft?.annotationId ? props.annotations.filter((annotation) => annotation.id !== draft.annotationId) : props.annotations;
+  const selectedId = draft?.annotationId === props.selectedId ? null : props.selectedId;
+  drawScene(ctx, img, annotations, selectedId);
 }
 
 function onPointerDown(event: PointerEvent): void {
@@ -192,26 +222,30 @@ function onPointerDown(event: PointerEvent): void {
   const point = toCanvasPoint(event);
 
   if (props.tool === 'text') {
-    textDraft.value = { point, value: 'Text' };
-    emit('update:selectedId', null);
-    nextTick(() => {
-      textInputRef.value?.focus();
-      textInputRef.value?.select();
-    });
+    const annotation = textAnnotationAt(point);
+    if (annotation) {
+      startTextEdit(annotation);
+    } else {
+      startNewTextEdit(point);
+    }
     return;
   }
 
-  const canvas = canvasRef.value;
-  canvas?.setPointerCapture(event.pointerId);
-
   if (props.tool === 'select') {
     const id = hitTest(props.annotations, point);
+    const original = props.annotations.find((item) => item.id === id);
+    if (original?.type === 'text' && event.detail >= 2) {
+      startTextEdit(original);
+      return;
+    }
+
+    const canvas = canvasRef.value;
+    canvas?.setPointerCapture(event.pointerId);
     emit('update:selectedId', id);
     if (!id) {
       pointerState.value = null;
       return;
     }
-    const original = props.annotations.find((item) => item.id === id);
     if (original) {
       emit('edit-start');
       pointerState.value = { mode: 'move', id, start: point, original };
@@ -219,6 +253,8 @@ function onPointerDown(event: PointerEvent): void {
     return;
   }
 
+  const canvas = canvasRef.value;
+  canvas?.setPointerCapture(event.pointerId);
   const draft = createAnnotation(props.tool, point, point, props.color, props.strokeWidth);
   emit('edit-start');
   pointerState.value = { mode: 'draw', id: draft.id, start: point };
@@ -275,7 +311,27 @@ function onPointerUp(event: PointerEvent): void {
   emit('edit-end');
 }
 
-function toCanvasPoint(event: PointerEvent): Point {
+function onStageMouseDown(event: MouseEvent): void {
+  startTextFromFallbackEvent(event);
+}
+
+function onStageClick(event: MouseEvent): void {
+  startTextFromFallbackEvent(event);
+}
+
+function startTextFromFallbackEvent(event: MouseEvent): void {
+  if (!props.screenshot || !imageRef.value || textDraft.value || props.tool !== 'text') return;
+  if (event.target === textInputRef.value) return;
+  const point = toCanvasPoint(event);
+  const annotation = textAnnotationAt(point);
+  if (annotation) {
+    startTextEdit(annotation);
+  } else {
+    startNewTextEdit(point);
+  }
+}
+
+function toCanvasPoint(event: MouseEvent): Point {
   const canvas = canvasRef.value;
   if (!canvas) return { x: 0, y: 0 };
   const rect = canvas.getBoundingClientRect();
@@ -287,14 +343,86 @@ function toCanvasPoint(event: PointerEvent): Point {
   };
 }
 
+function startNewTextEdit(point: Point): void {
+  emit('edit-start');
+  textDraft.value = {
+    annotationId: null,
+    point,
+    value: '',
+    color: props.color,
+    strokeWidth: props.strokeWidth,
+    fontSize: props.fontSize,
+  };
+  emit('update:selectedId', null);
+  focusTextInput();
+}
+
+function startTextEdit(annotation: TextAnnotation): void {
+  emit('edit-start');
+  textDraft.value = {
+    annotationId: annotation.id,
+    point: { x: annotation.x, y: annotation.y },
+    value: annotation.text,
+    color: annotation.color,
+    strokeWidth: annotation.strokeWidth,
+    fontSize: annotation.fontSize,
+  };
+  emit('update:selectedId', annotation.id);
+  focusTextInput();
+}
+
+function focusTextInput(): void {
+  nextTick(() => {
+    const input = textInputRef.value;
+    if (!input) return;
+    input.focus();
+    const end = input.value.length;
+    input.setSelectionRange(end, end);
+  });
+}
+
+function textAnnotationAt(point: Point): TextAnnotation | null {
+  const id = hitTest(props.annotations, point);
+  const annotation = props.annotations.find((item) => item.id === id);
+  return annotation?.type === 'text' ? annotation : null;
+}
+
 function commitText(): void {
   const draft = textDraft.value;
   if (!draft) return;
-  const text = draft.value.trim();
   textDraft.value = null;
-  if (!text) return;
-  const annotation = createTextAnnotation(draft.point, text, props.color, props.strokeWidth, props.fontSize);
-  emit('edit-start');
+  const text = draft.value;
+
+  if (draft.annotationId) {
+    const original = props.annotations.find((annotation): annotation is TextAnnotation => annotation.id === draft.annotationId && annotation.type === 'text');
+    if (!original) {
+      emit('edit-end');
+      return;
+    }
+    if (!text.trim()) {
+      emit('update:annotations', props.annotations.filter((annotation) => annotation.id !== draft.annotationId));
+      emit('update:selectedId', null);
+      emit('edit-end');
+      emit('status', 'Text deleted');
+      return;
+    }
+    if (original.text === text) {
+      emit('edit-end');
+      return;
+    }
+    emit('update:annotations', props.annotations.map((annotation) => (annotation.id === draft.annotationId ? { ...annotation, text } : annotation)));
+    emit('update:selectedId', draft.annotationId);
+    emit('edit-end');
+    emit('status', 'Text updated');
+    return;
+  }
+
+  if (!text.trim()) {
+    emit('edit-end');
+    return;
+  }
+  const layout = textDraftLayout(draft);
+  const annotation = createTextAnnotation({ x: layout.left / props.zoom, y: layout.top / props.zoom }, text, draft.color, draft.strokeWidth, draft.fontSize);
   emit('update:annotations', [...props.annotations, annotation]);
   emit('update:selectedId', annotation.id);
   emit('edit-end');
@@ -337,6 +465,26 @@ async function downloadImage(): Promise<void> {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function textDraftLayout(draft: TextDraft): { left: number; top: number; width: number; height: number; fontSize: number; lineHeight: number } {
+  const lines = draft.value.split('\n');
+  const longestLine = Math.max(4, ...lines.map((line) => line.length));
+  const fontSize = draft.fontSize * props.zoom;
+  const lineHeight = draft.fontSize * 1.22 * props.zoom;
+  const desiredWidth = longestLine * draft.fontSize * 0.62 * props.zoom + textEditorPaddingWidth;
+  const stageWidth = canvasSize.value.width * props.zoom;
+  const stageHeight = canvasSize.value.height * props.zoom;
+  const width = Math.min(Math.max(desiredWidth, minTextEditorWidth), Math.max(1, stageWidth - 8));
+  const height = Math.max(lineHeight + textEditorPaddingHeight, lines.length * lineHeight + textEditorPaddingHeight);
+  return {
+    left: clamp(draft.point.x * props.zoom, 0, Math.max(0, stageWidth - width - 8)),
+    top: clamp(draft.point.y * props.zoom, 0, Math.max(0, stageHeight - height - 8)),
+    width,
+    height,
+    fontSize,
+    lineHeight,
+  };
 }
 
 function pixels(value: string): number {

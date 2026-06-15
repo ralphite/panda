@@ -248,6 +248,7 @@ async function uploadBlob(blob: Blob, sourceUrl: string, pageTitle: string): Pro
 function onKeyDown(event: KeyboardEvent): void {
   const target = event.target as HTMLElement | null;
   if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+  if (pendingAnnotationSnapshot) return;
 
   const key = event.key.toLowerCase();
   if ((event.metaKey || event.ctrlKey) && !event.altKey && key === 'z') {
