@@ -1,7 +1,36 @@
 const SERVER_ORIGIN = 'http://localhost:8086';
+const CAPTURE_KEY_PREFIX = 'capture:';
+const CAPTURE_TAB_KEY_PREFIX = 'captureTab:';
+const CAPTURE_MAX_AGE_MS = 30 * 60 * 1000;
+const CLEANUP_ALARM_NAME = 'panda-capture-cleanup';
+const CLEANUP_INTERVAL_MINUTES = 5;
+
+void installCleanupAlarm();
+const initialCleanup = cleanupStaleCaptures({ removeUntracked: true });
+void initialCleanup;
 
 chrome.action.onClicked.addListener((tab) => {
   void captureTab(tab);
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  void installCleanupAlarm();
+  void cleanupStaleCaptures({ removeUntracked: true });
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  void installCleanupAlarm();
+  void cleanupStaleCaptures({ removeUntracked: true });
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === CLEANUP_ALARM_NAME) {
+    void cleanupStaleCaptures();
+  }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  void cleanupCaptureForClosedTab(tabId);
 });
 
 async function captureTab(tab) {
@@ -10,14 +39,17 @@ async function captureTab(tab) {
     return;
   }
 
+  let captureKey = null;
   try {
+    await cleanupStaleCaptures();
     await chrome.action.setBadgeText({ text: '...' });
     await chrome.action.setBadgeBackgroundColor({ color: '#2563eb' });
 
     const capture = await captureFullPage(tab);
     const captureId = crypto.randomUUID();
+    captureKey = `${CAPTURE_KEY_PREFIX}${captureId}`;
     await chrome.storage.session.set({
-      [`capture:${captureId}`]: {
+      [captureKey]: {
         imageData: capture.imageData,
         sourceUrl: capture.url || tab.url || '',
         pageTitle: capture.title || tab.title || '',
@@ -26,16 +58,117 @@ async function captureTab(tab) {
       },
     });
 
-    await chrome.tabs.create({
+    const captureTab = await chrome.tabs.create({
       windowId: tab.windowId,
       index: tab.index,
       active: true,
       url: chrome.runtime.getURL(`capture.html?id=${encodeURIComponent(captureId)}`),
     });
+    await trackCaptureTab(captureTab.id, captureKey);
+    captureKey = null;
   } catch (error) {
+    if (captureKey) {
+      await chrome.storage.session.remove(captureKey).catch(() => {});
+    }
     await openErrorTab(tab, error instanceof Error ? error.message : String(error));
   } finally {
     await chrome.action.setBadgeText({ text: '' });
+  }
+}
+
+async function installCleanupAlarm() {
+  await chrome.alarms.create(CLEANUP_ALARM_NAME, {
+    delayInMinutes: CLEANUP_INTERVAL_MINUTES,
+    periodInMinutes: CLEANUP_INTERVAL_MINUTES,
+  });
+}
+
+async function cleanupStaleCaptures(options = {}) {
+  const now = options.now ?? Date.now();
+  const removeUntracked = options.removeUntracked ?? false;
+  const entries = await chrome.storage.session.get(null);
+  const keysToRemove = new Set();
+  const trackedCaptureKeys = new Set();
+
+  for (const [key, value] of Object.entries(entries)) {
+    if (!key.startsWith(CAPTURE_TAB_KEY_PREFIX)) continue;
+    const captureKey = captureKeyFromTabRef(value);
+    if (captureKey) trackedCaptureKeys.add(captureKey);
+  }
+
+  for (const [key, value] of Object.entries(entries)) {
+    if (!key.startsWith(CAPTURE_KEY_PREFIX)) continue;
+    if (isExpiredCapture(value, now) || (removeUntracked && !trackedCaptureKeys.has(key))) {
+      keysToRemove.add(key);
+    }
+  }
+
+  for (const [key, value] of Object.entries(entries)) {
+    if (!key.startsWith(CAPTURE_TAB_KEY_PREFIX)) continue;
+
+    const captureKey = captureKeyFromTabRef(value);
+    if (!captureKey || !entries[captureKey]) {
+      keysToRemove.add(key);
+      continue;
+    }
+
+    const tabId = Number(key.slice(CAPTURE_TAB_KEY_PREFIX.length));
+    if (captureKey && keysToRemove.has(captureKey)) {
+      keysToRemove.add(key);
+      continue;
+    }
+
+    if (!Number.isInteger(tabId) || !(await tabExists(tabId))) {
+      keysToRemove.add(key);
+      if (captureKey) keysToRemove.add(captureKey);
+    }
+  }
+
+  if (keysToRemove.size > 0) {
+    await chrome.storage.session.remove([...keysToRemove]);
+  }
+}
+
+async function cleanupCaptureForClosedTab(tabId) {
+  const tabKey = captureTabKey(tabId);
+  const entries = await chrome.storage.session.get(tabKey);
+  const captureKey = captureKeyFromTabRef(entries[tabKey]);
+  const keysToRemove = [tabKey];
+  if (captureKey) keysToRemove.push(captureKey);
+  await chrome.storage.session.remove(keysToRemove);
+}
+
+async function trackCaptureTab(tabId, captureKey) {
+  if (!tabId || !captureKey) return;
+  await chrome.storage.session.set({
+    [captureTabKey(tabId)]: {
+      captureKey,
+      createdAt: Date.now(),
+    },
+  });
+}
+
+function captureTabKey(tabId) {
+  return `${CAPTURE_TAB_KEY_PREFIX}${tabId}`;
+}
+
+function captureKeyFromTabRef(value) {
+  if (typeof value === 'string') return value;
+  if (value && typeof value.captureKey === 'string') return value.captureKey;
+  return '';
+}
+
+function isExpiredCapture(value, now) {
+  const createdAt = value && typeof value.createdAt === 'number' ? value.createdAt : NaN;
+  return !Number.isFinite(createdAt) || now - createdAt >= CAPTURE_MAX_AGE_MS;
+}
+
+async function tabExists(tabId) {
+  try {
+    await chrome.tabs.get(tabId);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -149,17 +282,27 @@ function blobToDataURL(blob) {
 
 async function openErrorTab(tab, message) {
   const captureId = crypto.randomUUID();
+  const captureKey = `${CAPTURE_KEY_PREFIX}${captureId}`;
   await chrome.storage.session.set({
-    [`capture:${captureId}`]: {
+    [captureKey]: {
       error: message,
       serverOrigin: SERVER_ORIGIN,
       createdAt: Date.now(),
     },
   });
-  await chrome.tabs.create({
+  const captureTab = await chrome.tabs.create({
     windowId: tab.windowId,
     index: tab.index,
     active: true,
     url: chrome.runtime.getURL(`capture.html?id=${encodeURIComponent(captureId)}`),
   });
+  await trackCaptureTab(captureTab.id, captureKey);
+}
+
+if (globalThis.__pandaBackgroundTest) {
+  globalThis.__pandaBackgroundTest.api = {
+    cleanupCaptureForClosedTab,
+    cleanupStaleCaptures,
+    initialCleanup,
+  };
 }

@@ -20,6 +20,8 @@ Open http://localhost:8086/screenshot.
 4. Keep the Panda server running on `http://localhost:8086`.
 5. Click the extension icon on any normal page. It captures the full page, opens a crop tab before the source tab, uploads the crop, then replaces that tab with the web editor.
 
+Temporary full-page captures live in Chrome extension session storage. They are removed after upload, when the crop tab is closed, and after 30 minutes.
+
 ## Keyboard
 
 - `V` select
