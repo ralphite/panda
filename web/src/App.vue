@@ -23,14 +23,18 @@
 
       <CanvasEditor
         ref="editorRef"
-        v-model:annotations="annotations"
-        v-model:selected-id="selectedId"
+        :annotations="annotations"
+        :selected-id="selectedId"
         :screenshot="activeScreenshot"
         :tool="tool"
         :color="color"
         :stroke-width="strokeWidth"
         :font-size="fontSize"
         :zoom="zoom"
+        @update:annotations="setAnnotations"
+        @update:selected-id="selectedId = $event"
+        @edit-start="beginAnnotationEdit"
+        @edit-end="finishAnnotationEdit"
         @fit-zoom="setZoom"
         @status="setStatus"
         @upload="triggerUpload"
@@ -62,8 +66,17 @@ import Inspector from './components/Inspector.vue';
 import ScreenshotRail from './components/ScreenshotRail.vue';
 import StatusBar from './components/StatusBar.vue';
 import Toolbar from './components/Toolbar.vue';
+import {
+  annotationsEqual,
+  createAnnotationSnapshot,
+  createEmptyAnnotationHistory,
+  pushUndoSnapshot,
+  redoAnnotationHistory,
+  undoAnnotationHistory,
+} from './lib/annotationHistory';
 import { patchAnnotation } from './lib/editor';
 import { normalizeZoom } from './lib/zoom';
+import type { AnnotationHistorySnapshot, AnnotationHistoryState } from './lib/annotationHistory';
 import type { Annotation, AnnotationPatch, ScreenshotDetail, ScreenshotSummary, Tool } from './types';
 
 const screenshots = ref<ScreenshotSummary[]>([]);
@@ -79,9 +92,12 @@ const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
 const statusMessage = ref('Ready');
 const editorRef = ref<InstanceType<typeof CanvasEditor> | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
+const annotationHistory = ref<AnnotationHistoryState>(createEmptyAnnotationHistory());
 
 let saveTimer: number | undefined;
 let suppressSave = false;
+let pendingAnnotationSnapshot: AnnotationHistorySnapshot | null = null;
+let restoringAnnotationHistory = false;
 
 const activeTitle = computed(() => {
   if (!activeScreenshot.value) return 'Editor';
@@ -141,6 +157,7 @@ async function openScreenshot(id: string, push = true): Promise<void> {
     activeScreenshot.value = shot;
     annotations.value = Array.isArray(shot.annotations) ? shot.annotations : [];
     selectedId.value = null;
+    resetAnnotationHistory();
     saveState.value = 'saved';
     statusMessage.value = 'Ready';
     if (push) {
@@ -170,13 +187,13 @@ async function persistAnnotations(): Promise<void> {
 function patchSelected(patch: AnnotationPatch): void {
   const id = selectedId.value;
   if (!id) return;
-  annotations.value = annotations.value.map((annotation) => (annotation.id === id ? patchAnnotation(annotation, patch) : annotation));
+  setAnnotations(annotations.value.map((annotation) => (annotation.id === id ? patchAnnotation(annotation, patch) : annotation)));
 }
 
 function deleteSelected(): void {
   const id = selectedId.value;
   if (!id) return;
-  annotations.value = annotations.value.filter((annotation) => annotation.id !== id);
+  setAnnotations(annotations.value.filter((annotation) => annotation.id !== id));
   selectedId.value = null;
   statusMessage.value = 'Annotation deleted';
 }
@@ -238,6 +255,17 @@ function onKeyDown(event: KeyboardEvent): void {
   const target = event.target as HTMLElement | null;
   if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
 
+  const key = event.key.toLowerCase();
+  if ((event.metaKey || event.ctrlKey) && !event.altKey && key === 'z') {
+    event.preventDefault();
+    if (event.shiftKey) {
+      redoAnnotationEdit();
+    } else {
+      undoAnnotationEdit();
+    }
+    return;
+  }
+
   if (!event.metaKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'c') {
     event.preventDefault();
     void copyImage();
@@ -252,12 +280,68 @@ function onKeyDown(event: KeyboardEvent): void {
     return;
   }
 
-  const key = event.key.toLowerCase();
   const tools: Record<string, Tool> = { v: 'select', r: 'rect', o: 'oval', l: 'line', a: 'arrow', p: 'pencil', t: 'text' };
   if (tools[key]) {
     event.preventDefault();
     tool.value = tools[key];
   }
+}
+
+function setAnnotations(next: Annotation[]): void {
+  if (!restoringAnnotationHistory && !pendingAnnotationSnapshot && !annotationsEqual(annotations.value, next)) {
+    recordUndoSnapshot(currentAnnotationSnapshot());
+  }
+  annotations.value = next;
+}
+
+function beginAnnotationEdit(): void {
+  if (restoringAnnotationHistory || pendingAnnotationSnapshot || !activeScreenshot.value) return;
+  pendingAnnotationSnapshot = currentAnnotationSnapshot();
+}
+
+function finishAnnotationEdit(): void {
+  const snapshot = pendingAnnotationSnapshot;
+  pendingAnnotationSnapshot = null;
+  if (!snapshot || annotationsEqual(snapshot.annotations, annotations.value)) return;
+  recordUndoSnapshot(snapshot);
+}
+
+function undoAnnotationEdit(): void {
+  finishAnnotationEdit();
+  const result = undoAnnotationHistory(annotationHistory.value, currentAnnotationSnapshot());
+  if (!result.snapshot) return;
+  annotationHistory.value = result.history;
+  restoreAnnotationSnapshot(result.snapshot);
+  statusMessage.value = 'Undone';
+}
+
+function redoAnnotationEdit(): void {
+  finishAnnotationEdit();
+  const result = redoAnnotationHistory(annotationHistory.value, currentAnnotationSnapshot());
+  if (!result.snapshot) return;
+  annotationHistory.value = result.history;
+  restoreAnnotationSnapshot(result.snapshot);
+  statusMessage.value = 'Redone';
+}
+
+function recordUndoSnapshot(snapshot: AnnotationHistorySnapshot): void {
+  annotationHistory.value = pushUndoSnapshot(annotationHistory.value, snapshot);
+}
+
+function restoreAnnotationSnapshot(snapshot: AnnotationHistorySnapshot): void {
+  restoringAnnotationHistory = true;
+  annotations.value = snapshot.annotations;
+  selectedId.value = snapshot.selectedId && snapshot.annotations.some((annotation) => annotation.id === snapshot.selectedId) ? snapshot.selectedId : null;
+  restoringAnnotationHistory = false;
+}
+
+function currentAnnotationSnapshot(): AnnotationHistorySnapshot {
+  return createAnnotationSnapshot(annotations.value, selectedId.value);
+}
+
+function resetAnnotationHistory(): void {
+  pendingAnnotationSnapshot = null;
+  annotationHistory.value = createEmptyAnnotationHistory();
 }
 
 function changeZoom(delta: number): void {
@@ -276,6 +360,7 @@ function onPopState(): void {
     activeScreenshot.value = null;
     annotations.value = [];
     selectedId.value = null;
+    resetAnnotationHistory();
   }
 }
 

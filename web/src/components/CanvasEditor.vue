@@ -77,6 +77,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:annotations': [Annotation[]];
   'update:selectedId': [string | null];
+  'edit-start': [];
+  'edit-end': [];
   'fit-zoom': [number];
   status: [string];
   upload: [];
@@ -211,12 +213,14 @@ function onPointerDown(event: PointerEvent): void {
     }
     const original = props.annotations.find((item) => item.id === id);
     if (original) {
+      emit('edit-start');
       pointerState.value = { mode: 'move', id, start: point, original };
     }
     return;
   }
 
   const draft = createAnnotation(props.tool, point, point, props.color, props.strokeWidth);
+  emit('edit-start');
   pointerState.value = { mode: 'draw', id: draft.id, start: point };
   emit('update:selectedId', draft.id);
   emit('update:annotations', [...props.annotations, draft]);
@@ -263,10 +267,12 @@ function onPointerUp(event: PointerEvent): void {
     if (created && !isRenderableSize(created)) {
       emit('update:annotations', props.annotations.filter((annotation) => annotation.id !== state.id));
       emit('update:selectedId', null);
+      emit('edit-end');
       return;
     }
     emit('status', 'Annotation added');
   }
+  emit('edit-end');
 }
 
 function toCanvasPoint(event: PointerEvent): Point {
@@ -288,8 +294,10 @@ function commitText(): void {
   textDraft.value = null;
   if (!text) return;
   const annotation = createTextAnnotation(draft.point, text, props.color, props.strokeWidth, props.fontSize);
+  emit('edit-start');
   emit('update:annotations', [...props.annotations, annotation]);
   emit('update:selectedId', annotation.id);
+  emit('edit-end');
   emit('status', 'Text added');
 }
 
