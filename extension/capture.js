@@ -1,6 +1,7 @@
 const state = {
   capture: null,
   captureKey: null,
+  imageUrl: null,
   selection: null,
   dragging: null,
   uploading: false,
@@ -24,8 +25,7 @@ async function init() {
     return;
   }
   state.captureKey = `capture:${id}`;
-  const payload = await chrome.storage.session.get(state.captureKey);
-  state.capture = payload[state.captureKey];
+  state.capture = await loadCapture(state.captureKey);
   if (!state.capture) {
     showMessage('Capture data was not found.');
     return;
@@ -36,7 +36,7 @@ async function init() {
   }
 
   title.textContent = state.capture.pageTitle || state.capture.sourceUrl || 'Full page capture';
-  image.src = state.capture.imageData;
+  image.src = imageSource(state.capture);
   await image.decode();
   stage.hidden = false;
   message.hidden = true;
@@ -90,6 +90,10 @@ window.addEventListener('resize', () => {
   drawOverlay();
 });
 
+window.addEventListener('pagehide', () => {
+  revokeImageUrl();
+});
+
 async function uploadSelection() {
   if (!state.selection || state.uploading) return;
   try {
@@ -112,8 +116,10 @@ async function uploadSelection() {
     }
     const payload = await res.json();
     if (state.captureKey) {
+      await PandaCaptureStore.deleteCapture(state.captureKey);
       await chrome.storage.session.remove(state.captureKey);
     }
+    revokeImageUrl();
     location.replace(`${state.capture.serverOrigin}${payload.url}`);
   } catch (error) {
     state.uploading = false;
@@ -122,6 +128,29 @@ async function uploadSelection() {
     showMessage(error instanceof Error ? error.message : String(error));
     message.hidden = false;
   }
+}
+
+async function loadCapture(captureKey) {
+  const capture = await PandaCaptureStore.getCapture(captureKey);
+  if (capture) return capture;
+
+  const payload = await chrome.storage.session.get(captureKey);
+  return payload[captureKey];
+}
+
+function imageSource(capture) {
+  if (capture.imageBlob) {
+    revokeImageUrl();
+    state.imageUrl = URL.createObjectURL(capture.imageBlob);
+    return state.imageUrl;
+  }
+  return capture.imageData;
+}
+
+function revokeImageUrl() {
+  if (!state.imageUrl) return;
+  URL.revokeObjectURL(state.imageUrl);
+  state.imageUrl = null;
 }
 
 function cropSelection(selection) {

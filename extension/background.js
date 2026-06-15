@@ -5,6 +5,12 @@ const CAPTURE_MAX_AGE_MS = 30 * 60 * 1000;
 const CLEANUP_ALARM_NAME = 'panda-capture-cleanup';
 const CLEANUP_INTERVAL_MINUTES = 5;
 
+if (!globalThis.PandaCaptureStore && typeof importScripts === 'function') {
+  importScripts('capture-store.js');
+}
+
+const captureStore = globalThis.PandaCaptureStore;
+
 void installCleanupAlarm();
 const initialCleanup = cleanupStaleCaptures({ removeUntracked: true });
 void initialCleanup;
@@ -48,15 +54,7 @@ async function captureTab(tab) {
     const capture = await captureFullPage(tab);
     const captureId = crypto.randomUUID();
     captureKey = `${CAPTURE_KEY_PREFIX}${captureId}`;
-    await chrome.storage.session.set({
-      [captureKey]: {
-        imageData: capture.imageData,
-        sourceUrl: capture.url || tab.url || '',
-        pageTitle: capture.title || tab.title || '',
-        serverOrigin: SERVER_ORIGIN,
-        createdAt: Date.now(),
-      },
-    });
+    await storeCapture(captureKey, capture, tab);
 
     const captureTab = await chrome.tabs.create({
       windowId: tab.windowId,
@@ -68,7 +66,7 @@ async function captureTab(tab) {
     captureKey = null;
   } catch (error) {
     if (captureKey) {
-      await chrome.storage.session.remove(captureKey).catch(() => {});
+      await deleteIndexedCaptures([captureKey]).catch(() => {});
     }
     await openErrorTab(tab, error instanceof Error ? error.message : String(error));
   } finally {
@@ -87,7 +85,8 @@ async function cleanupStaleCaptures(options = {}) {
   const now = options.now ?? Date.now();
   const removeUntracked = options.removeUntracked ?? false;
   const entries = await chrome.storage.session.get(null);
-  const keysToRemove = new Set();
+  const sessionKeysToRemove = new Set();
+  const indexedCaptureKeysToRemove = new Set();
   const trackedCaptureKeys = new Set();
 
   for (const [key, value] of Object.entries(entries)) {
@@ -98,8 +97,18 @@ async function cleanupStaleCaptures(options = {}) {
 
   for (const [key, value] of Object.entries(entries)) {
     if (!key.startsWith(CAPTURE_KEY_PREFIX)) continue;
-    if (isExpiredCapture(value, now) || (removeUntracked && !trackedCaptureKeys.has(key))) {
-      keysToRemove.add(key);
+    if (!isExpiredCapture(value, now)) {
+      await migrateLegacySessionCapture(key, value);
+    }
+    sessionKeysToRemove.add(key);
+  }
+
+  const indexedCaptures = await captureStore.listCaptures();
+  const indexedCaptureKeys = new Set(indexedCaptures.map((capture) => capture.key));
+
+  for (const capture of indexedCaptures) {
+    if (isExpiredCapture(capture, now) || (removeUntracked && !trackedCaptureKeys.has(capture.key))) {
+      indexedCaptureKeysToRemove.add(capture.key);
     }
   }
 
@@ -107,26 +116,46 @@ async function cleanupStaleCaptures(options = {}) {
     if (!key.startsWith(CAPTURE_TAB_KEY_PREFIX)) continue;
 
     const captureKey = captureKeyFromTabRef(value);
-    if (!captureKey || !entries[captureKey]) {
-      keysToRemove.add(key);
+    const hasIndexedCapture = indexedCaptureKeys.has(captureKey) && !indexedCaptureKeysToRemove.has(captureKey);
+    const hasLegacySessionCapture = Object.prototype.hasOwnProperty.call(entries, captureKey) && !sessionKeysToRemove.has(captureKey);
+    if (!captureKey || (!hasIndexedCapture && !hasLegacySessionCapture)) {
+      sessionKeysToRemove.add(key);
       continue;
     }
 
     const tabId = Number(key.slice(CAPTURE_TAB_KEY_PREFIX.length));
-    if (captureKey && keysToRemove.has(captureKey)) {
-      keysToRemove.add(key);
-      continue;
-    }
-
     if (!Number.isInteger(tabId) || !(await tabExists(tabId))) {
-      keysToRemove.add(key);
-      if (captureKey) keysToRemove.add(captureKey);
+      sessionKeysToRemove.add(key);
+      if (captureKey) {
+        indexedCaptureKeysToRemove.add(captureKey);
+        sessionKeysToRemove.add(captureKey);
+      }
     }
   }
 
-  if (keysToRemove.size > 0) {
-    await chrome.storage.session.remove([...keysToRemove]);
+  if (indexedCaptureKeysToRemove.size > 0) {
+    await deleteIndexedCaptures([...indexedCaptureKeysToRemove]);
   }
+  if (sessionKeysToRemove.size > 0) {
+    await chrome.storage.session.remove([...sessionKeysToRemove]);
+  }
+}
+
+async function migrateLegacySessionCapture(captureKey, value) {
+  const capture = {
+    key: captureKey,
+    sourceUrl: value.sourceUrl || '',
+    pageTitle: value.pageTitle || '',
+    serverOrigin: value.serverOrigin || SERVER_ORIGIN,
+    createdAt: typeof value.createdAt === 'number' ? value.createdAt : Date.now(),
+  };
+  if (value.error) {
+    capture.error = value.error;
+  }
+  if (value.imageData) {
+    capture.imageBlob = await dataURLToBlob(value.imageData);
+  }
+  await captureStore.putCapture(capture);
 }
 
 async function cleanupCaptureForClosedTab(tabId) {
@@ -135,7 +164,23 @@ async function cleanupCaptureForClosedTab(tabId) {
   const captureKey = captureKeyFromTabRef(entries[tabKey]);
   const keysToRemove = [tabKey];
   if (captureKey) keysToRemove.push(captureKey);
+  await deleteIndexedCaptures([captureKey]);
   await chrome.storage.session.remove(keysToRemove);
+}
+
+async function storeCapture(captureKey, capture, tab) {
+  await captureStore.putCapture({
+    key: captureKey,
+    imageBlob: capture.imageBlob,
+    sourceUrl: capture.url || tab.url || '',
+    pageTitle: capture.title || tab.title || '',
+    serverOrigin: SERVER_ORIGIN,
+    createdAt: Date.now(),
+  });
+}
+
+async function deleteIndexedCaptures(captureKeys) {
+  await captureStore.deleteCaptures(captureKeys);
 }
 
 async function trackCaptureTab(tabId, captureKey) {
@@ -233,8 +278,7 @@ async function captureFullPage(tab) {
   }, [metrics.originalX, metrics.originalY]);
 
   const blob = await canvas.convertToBlob({ type: 'image/png' });
-  const imageData = await blobToDataURL(blob);
-  return { imageData, url: metrics.url, title: metrics.title };
+  return { imageBlob: blob, url: metrics.url, title: metrics.title };
 }
 
 async function execute(tabId, func, args = []) {
@@ -267,28 +311,21 @@ function axisPositions(max, step) {
 }
 
 async function dataURLToBitmap(dataUrl) {
-  const blob = await (await fetch(dataUrl)).blob();
-  return createImageBitmap(blob);
+  return createImageBitmap(await dataURLToBlob(dataUrl));
 }
 
-function blobToDataURL(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
+async function dataURLToBlob(dataUrl) {
+  return (await fetch(dataUrl)).blob();
 }
 
 async function openErrorTab(tab, message) {
   const captureId = crypto.randomUUID();
   const captureKey = `${CAPTURE_KEY_PREFIX}${captureId}`;
-  await chrome.storage.session.set({
-    [captureKey]: {
-      error: message,
-      serverOrigin: SERVER_ORIGIN,
-      createdAt: Date.now(),
-    },
+  await captureStore.putCapture({
+    key: captureKey,
+    error: message,
+    serverOrigin: SERVER_ORIGIN,
+    createdAt: Date.now(),
   });
   const captureTab = await chrome.tabs.create({
     windowId: tab.windowId,
@@ -304,5 +341,6 @@ if (globalThis.__pandaBackgroundTest) {
     cleanupCaptureForClosedTab,
     cleanupStaleCaptures,
     initialCleanup,
+    storeCapture,
   };
 }
