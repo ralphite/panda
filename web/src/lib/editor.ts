@@ -21,14 +21,24 @@ export function normalizeBounds(start: Point, end: Point): Bounds {
 }
 
 export function createAnnotation(tool: Exclude<Tool, 'select' | 'text'>, start: Point, end: Point, color: string, strokeWidth: number): Annotation {
-  if (tool === 'line') {
+  if (tool === 'line' || tool === 'arrow') {
     return {
       id: annotationId(),
-      type: 'line',
+      type: tool,
       x1: start.x,
       y1: start.y,
       x2: end.x,
       y2: end.y,
+      color,
+      strokeWidth,
+    };
+  }
+
+  if (tool === 'pencil') {
+    return {
+      id: annotationId(),
+      type: 'pencil',
+      points: [start, end],
       color,
       strokeWidth,
     };
@@ -90,11 +100,16 @@ export function drawAnnotation(ctx: CanvasRenderingContext2D, annotation: Annota
     ctx.beginPath();
     ctx.ellipse(annotation.x + annotation.w / 2, annotation.y + annotation.h / 2, Math.abs(annotation.w / 2), Math.abs(annotation.h / 2), 0, 0, Math.PI * 2);
     ctx.stroke();
-  } else if (annotation.type === 'line') {
+  } else if (isEndpointAnnotation(annotation)) {
     ctx.beginPath();
     ctx.moveTo(annotation.x1, annotation.y1);
     ctx.lineTo(annotation.x2, annotation.y2);
     ctx.stroke();
+    if (annotation.type === 'arrow') {
+      drawArrowHead(ctx, annotation);
+    }
+  } else if (annotation.type === 'pencil') {
+    drawPencilPath(ctx, annotation.points);
   } else {
     ctx.font = `600 ${annotation.fontSize}px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
     ctx.textBaseline = 'top';
@@ -135,8 +150,11 @@ export function drawSelection(ctx: CanvasRenderingContext2D, annotation: Annotat
 }
 
 export function annotationBounds(annotation: Annotation): Bounds {
-  if (annotation.type === 'line') {
+  if (isEndpointAnnotation(annotation)) {
     return normalizeBounds({ x: annotation.x1, y: annotation.y1 }, { x: annotation.x2, y: annotation.y2 });
+  }
+  if (annotation.type === 'pencil') {
+    return pathBounds(annotation.points);
   }
   if (annotation.type === 'text') {
     const lines = textLines(annotation.text);
@@ -162,8 +180,11 @@ export function hitTest(annotations: Annotation[], point: Point): string | null 
 
 export function containsPoint(annotation: Annotation, point: Point): boolean {
   const tolerance = Math.max(8, annotation.strokeWidth + 4);
-  if (annotation.type === 'line') {
+  if (isEndpointAnnotation(annotation)) {
     return distanceToSegment(point, { x: annotation.x1, y: annotation.y1 }, { x: annotation.x2, y: annotation.y2 }) <= tolerance;
+  }
+  if (annotation.type === 'pencil') {
+    return pathContainsPoint(annotation.points, point, tolerance);
   }
 
   const bounds = annotationBounds(annotation);
@@ -182,8 +203,11 @@ export function containsPoint(annotation: Annotation, point: Point): boolean {
 }
 
 export function moveAnnotation(annotation: Annotation, dx: number, dy: number): Annotation {
-  if (annotation.type === 'line') {
+  if (isEndpointAnnotation(annotation)) {
     return { ...annotation, x1: annotation.x1 + dx, y1: annotation.y1 + dy, x2: annotation.x2 + dx, y2: annotation.y2 + dy };
+  }
+  if (annotation.type === 'pencil') {
+    return { ...annotation, points: annotation.points.map((point) => ({ x: point.x + dx, y: point.y + dy })) };
   }
   if (annotation.type === 'text') {
     return { ...annotation, x: annotation.x + dx, y: annotation.y + dy };
@@ -196,13 +220,69 @@ export function patchAnnotation(annotation: Annotation, patch: AnnotationPatch):
 }
 
 export function isRenderableSize(annotation: Annotation): boolean {
-  if (annotation.type === 'line') {
+  if (isEndpointAnnotation(annotation)) {
     return Math.hypot(annotation.x2 - annotation.x1, annotation.y2 - annotation.y1) > 4;
+  }
+  if (annotation.type === 'pencil') {
+    return pathLength(annotation.points) > 4;
   }
   if (annotation.type === 'text') {
     return annotation.text.trim().length > 0;
   }
   return annotation.w > 4 && annotation.h > 4;
+}
+
+function isEndpointAnnotation(annotation: Annotation): annotation is Extract<Annotation, { type: 'line' | 'arrow' }> {
+  return annotation.type === 'line' || annotation.type === 'arrow';
+}
+
+function drawArrowHead(ctx: CanvasRenderingContext2D, annotation: Extract<Annotation, { type: 'arrow' }>): void {
+  const angle = Math.atan2(annotation.y2 - annotation.y1, annotation.x2 - annotation.x1);
+  const size = Math.max(10, annotation.strokeWidth * 4);
+  ctx.beginPath();
+  ctx.moveTo(annotation.x2, annotation.y2);
+  ctx.lineTo(annotation.x2 - Math.cos(angle - Math.PI / 6) * size, annotation.y2 - Math.sin(angle - Math.PI / 6) * size);
+  ctx.moveTo(annotation.x2, annotation.y2);
+  ctx.lineTo(annotation.x2 - Math.cos(angle + Math.PI / 6) * size, annotation.y2 - Math.sin(angle + Math.PI / 6) * size);
+  ctx.stroke();
+}
+
+function drawPencilPath(ctx: CanvasRenderingContext2D, points: Point[]): void {
+  if (points.length < 2) return;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (const point of points.slice(1)) {
+    ctx.lineTo(point.x, point.y);
+  }
+  ctx.stroke();
+}
+
+function pathBounds(points: Point[]): Bounds {
+  if (points.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+function pathContainsPoint(points: Point[], point: Point, tolerance: number): boolean {
+  for (let index = 1; index < points.length; index += 1) {
+    if (distanceToSegment(point, points[index - 1], points[index]) <= tolerance) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function pathLength(points: Point[]): number {
+  let length = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    length += Math.hypot(points[index].x - points[index - 1].x, points[index].y - points[index - 1].y);
+  }
+  return length;
 }
 
 function distanceToSegment(point: Point, start: Point, end: Point): number {

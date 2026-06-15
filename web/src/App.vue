@@ -251,7 +251,7 @@ function onKeyDown(event: KeyboardEvent): void {
   }
 
   const key = event.key.toLowerCase();
-  const tools: Record<string, Tool> = { v: 'select', r: 'rect', o: 'oval', l: 'line', t: 'text' };
+  const tools: Record<string, Tool> = { v: 'select', r: 'rect', o: 'oval', l: 'line', a: 'arrow', p: 'pencil', t: 'text' };
   if (tools[key]) {
     event.preventDefault();
     tool.value = tools[key];

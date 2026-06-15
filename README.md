@@ -28,6 +28,8 @@ Temporary full-page captures live in Chrome extension IndexedDB. They are remove
 - `R` rectangle
 - `O` oval
 - `L` line
+- `A` arrow
+- `P` pencil
 - `T` text
 - `Enter` insert a newline while typing text
 - `Esc` finish typing text

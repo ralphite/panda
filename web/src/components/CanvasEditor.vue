@@ -211,8 +211,13 @@ function onPointerMove(event: PointerEvent): void {
   if (state.mode === 'draw') {
     const next = props.annotations.map((annotation) => {
       if (annotation.id !== state.id) return annotation;
-      if (annotation.type === 'line') {
+      if (annotation.type === 'line' || annotation.type === 'arrow') {
         return { ...annotation, x2: point.x, y2: point.y };
+      }
+      if (annotation.type === 'pencil') {
+        const last = annotation.points[annotation.points.length - 1];
+        if (last && Math.hypot(point.x - last.x, point.y - last.y) < 2) return annotation;
+        return { ...annotation, points: [...annotation.points, point] };
       }
       if (annotation.type === 'rect' || annotation.type === 'oval') {
         return { ...annotation, ...normalizeBounds(state.start, point) };

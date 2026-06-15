@@ -1,4 +1,4 @@
-export type Tool = 'select' | 'rect' | 'oval' | 'line' | 'text';
+export type Tool = 'select' | 'rect' | 'oval' | 'line' | 'arrow' | 'pencil' | 'text';
 
 export interface ScreenshotSummary {
   id: string;
@@ -53,6 +53,19 @@ export interface LineAnnotation extends AnnotationBase {
   y2: number;
 }
 
+export interface ArrowAnnotation extends AnnotationBase {
+  type: 'arrow';
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+export interface PencilAnnotation extends AnnotationBase {
+  type: 'pencil';
+  points: Point[];
+}
+
 export interface TextAnnotation extends AnnotationBase {
   type: 'text';
   x: number;
@@ -61,7 +74,7 @@ export interface TextAnnotation extends AnnotationBase {
   fontSize: number;
 }
 
-export type ShapeAnnotation = RectAnnotation | OvalAnnotation | LineAnnotation | TextAnnotation;
+export type ShapeAnnotation = RectAnnotation | OvalAnnotation | LineAnnotation | ArrowAnnotation | PencilAnnotation | TextAnnotation;
 export type Annotation = ShapeAnnotation;
 
 export type AnnotationPatch = Partial<{
@@ -75,6 +88,7 @@ export type AnnotationPatch = Partial<{
   y1: number;
   x2: number;
   y2: number;
+  points: Point[];
   text: string;
   fontSize: number;
 }>;

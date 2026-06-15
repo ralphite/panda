@@ -68,7 +68,7 @@
 </template>
 
 <script setup lang="ts">
-import { Circle, Copy, Download, MousePointer2, PencilLine, Square, Type, Upload, ZoomIn, ZoomOut } from '@lucide/vue';
+import { ArrowRight, Circle, Copy, Download, Minus, MousePointer2, Pencil, Square, Type, Upload, ZoomIn, ZoomOut } from '@lucide/vue';
 import type { Tool } from '../types';
 
 defineProps<{
@@ -94,7 +94,9 @@ const tools = [
   { id: 'select', label: 'Select', shortcut: 'V', icon: MousePointer2 },
   { id: 'rect', label: 'Rectangle', shortcut: 'R', icon: Square },
   { id: 'oval', label: 'Oval', shortcut: 'O', icon: Circle },
-  { id: 'line', label: 'Line', shortcut: 'L', icon: PencilLine },
+  { id: 'line', label: 'Line', shortcut: 'L', icon: Minus },
+  { id: 'arrow', label: 'Arrow', shortcut: 'A', icon: ArrowRight },
+  { id: 'pencil', label: 'Pencil', shortcut: 'P', icon: Pencil },
   { id: 'text', label: 'Text', shortcut: 'T', icon: Type },
 ] satisfies Array<{ id: Tool; label: string; shortcut: string; icon: unknown }>;
 </script>

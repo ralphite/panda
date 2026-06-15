@@ -23,11 +23,15 @@
           </div>
         </div>
 
-        <div v-if="annotation.type === 'line'" class="grid grid-cols-2 gap-2">
+        <div v-if="annotation.type === 'line' || annotation.type === 'arrow'" class="grid grid-cols-2 gap-2">
           <NumberField label="X1" :value="annotation.x1" @change="patch({ x1: $event })" />
           <NumberField label="Y1" :value="annotation.y1" @change="patch({ y1: $event })" />
           <NumberField label="X2" :value="annotation.x2" @change="patch({ x2: $event })" />
           <NumberField label="Y2" :value="annotation.y2" @change="patch({ y2: $event })" />
+        </div>
+
+        <div v-else-if="annotation.type === 'pencil'" class="text-xs text-slate-500">
+          {{ annotation.points.length }} points
         </div>
 
         <div v-else-if="annotation.type === 'text'" class="space-y-3">
