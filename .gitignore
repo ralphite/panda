@@ -1,7 +1,7 @@
 data/
-panda
+/panda
+dist/
 web/dist/
 web/node_modules/
 web/storybook-static/
 web/tsconfig.tsbuildinfo
-

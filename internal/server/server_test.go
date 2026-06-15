@@ -19,7 +19,7 @@ func TestCreateListGetAndUpdateScreenshot(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	ts := httptest.NewServer(New(st, "").Handler())
+	ts := httptest.NewServer(New(st, nil).Handler())
 	t.Cleanup(ts.Close)
 
 	createBody := map[string]any{

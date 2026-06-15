@@ -14,9 +14,9 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"io/fs"
 	"net/http"
-	"os"
-	"path/filepath"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -27,9 +27,9 @@ import (
 const maxUploadBytes = 80 << 20
 
 type Server struct {
-	store     *store.Store
-	staticDir string
-	mux       *http.ServeMux
+	store  *store.Store
+	static fs.FS
+	mux    *http.ServeMux
 }
 
 type screenshotDTO struct {
@@ -54,11 +54,11 @@ type updateAnnotationsRequest struct {
 	Annotations json.RawMessage `json:"annotations"`
 }
 
-func New(st *store.Store, staticDir string) *Server {
+func New(st *store.Store, static fs.FS) *Server {
 	s := &Server{
-		store:     st,
-		staticDir: staticDir,
-		mux:       http.NewServeMux(),
+		store:  st,
+		static: static,
+		mux:    http.NewServeMux(),
 	}
 	s.routes()
 	return s
@@ -239,10 +239,11 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.URL.Path == "/screenshot" || strings.HasPrefix(r.URL.Path, "/screenshot/") {
-		index := filepath.Join(s.staticDir, "index.html")
-		if _, err := os.Stat(index); err == nil {
-			http.ServeFile(w, r, index)
-			return
+		if s.static != nil {
+			if _, err := fs.Stat(s.static, "index.html"); err == nil {
+				http.ServeFileFS(w, r, s.static, "index.html")
+				return
+			}
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -253,19 +254,18 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) tryServeStatic(w http.ResponseWriter, r *http.Request) bool {
-	if s.staticDir == "" {
+	if s.static == nil {
 		return false
 	}
-	clean := filepath.Clean(strings.TrimPrefix(r.URL.Path, "/"))
-	if clean == "." || strings.HasPrefix(clean, "..") {
+	name := path.Clean(strings.TrimPrefix(r.URL.Path, "/"))
+	if name == "." || name == ".." || strings.HasPrefix(name, "../") {
 		return false
 	}
-	path := filepath.Join(s.staticDir, clean)
-	info, err := os.Stat(path)
+	info, err := fs.Stat(s.static, name)
 	if err != nil || info.IsDir() {
 		return false
 	}
-	http.ServeFile(w, r, path)
+	http.ServeFileFS(w, r, s.static, name)
 	return true
 }
 
