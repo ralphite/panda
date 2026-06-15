@@ -27,5 +27,7 @@ Open http://localhost:8086/screenshot.
 - `O` oval
 - `L` line
 - `T` text
+- `Enter` insert a newline while typing text
+- `Esc` finish typing text
 - `Delete` remove selection
 - `C` copy annotated image

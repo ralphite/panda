@@ -31,14 +31,16 @@
           @pointerup="onPointerUp"
           @pointercancel="onPointerUp"
         />
-        <input
+        <textarea
           v-if="textDraft"
           ref="textInputRef"
           v-model="textDraft.value"
-          class="absolute rounded-md border border-blue-300 bg-white px-2 py-1 text-sm font-semibold text-neutral-950 shadow-lg outline-none ring-2 ring-blue-100"
+          class="absolute resize-none overflow-hidden rounded-md border border-blue-300 bg-white px-2 py-1 font-semibold text-neutral-950 shadow-lg outline-none ring-2 ring-blue-100"
+          placeholder="Text"
+          spellcheck="false"
+          wrap="off"
           :style="textDraftStyle"
-          @keydown.enter.prevent="commitText"
-          @keydown.esc.prevent="cancelText"
+          @keydown.esc.prevent="commitText"
           @blur="commitText"
         />
       </div>
@@ -79,7 +81,7 @@ const emit = defineEmits<{
 }>();
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
-const textInputRef = ref<HTMLInputElement | null>(null);
+const textInputRef = ref<HTMLTextAreaElement | null>(null);
 const imageRef = shallowRef<HTMLImageElement | null>(null);
 const canvasSize = ref({ width: 1, height: 1 });
 const textDraft = ref<{ point: Point; value: string } | null>(null);
@@ -103,11 +105,20 @@ const canvasStyle = computed(() => ({
 
 const textDraftStyle = computed(() => {
   if (!textDraft.value) return {};
+  const lines = textDraft.value.value.split('\n');
+  const longestLine = Math.max(4, ...lines.map((line) => line.length));
+  const left = textDraft.value.point.x * props.zoom;
+  const fontSize = props.fontSize * props.zoom;
+  const lineHeight = props.fontSize * 1.22 * props.zoom;
+  const desiredWidth = longestLine * props.fontSize * 0.62 * props.zoom + 24;
+  const maxWidth = Math.max(120, canvasSize.value.width * props.zoom - left - 8);
   return {
-    left: `${textDraft.value.point.x * props.zoom}px`,
+    left: `${left}px`,
     top: `${textDraft.value.point.y * props.zoom}px`,
-    minWidth: `${Math.max(120, 120 * props.zoom)}px`,
-    transform: 'translateY(-50%)',
+    width: `${clamp(desiredWidth, 120, maxWidth)}px`,
+    height: `${Math.max(lineHeight + 10, lines.length * lineHeight + 10)}px`,
+    fontSize: `${fontSize}px`,
+    lineHeight: `${lineHeight}px`,
   };
 });
 
@@ -160,11 +171,10 @@ function onPointerDown(event: PointerEvent): void {
   const point = toCanvasPoint(event);
 
   if (props.tool === 'text') {
-    textDraft.value = { point, value: 'Label' };
+    textDraft.value = { point, value: '' };
     emit('update:selectedId', null);
     nextTick(() => {
       textInputRef.value?.focus();
-      textInputRef.value?.select();
     });
     return;
   }
@@ -256,10 +266,6 @@ function commitText(): void {
   emit('update:annotations', [...props.annotations, annotation]);
   emit('update:selectedId', annotation.id);
   emit('status', 'Text added');
-}
-
-function cancelText(): void {
-  textDraft.value = null;
 }
 
 async function exportBlob(): Promise<Blob> {

@@ -100,9 +100,15 @@ export function drawAnnotation(ctx: CanvasRenderingContext2D, annotation: Annota
     ctx.textBaseline = 'top';
     ctx.lineWidth = Math.max(3, annotation.strokeWidth + 2);
     ctx.strokeStyle = 'rgba(255,255,255,0.92)';
-    ctx.strokeText(annotation.text, annotation.x, annotation.y);
+    const lines = textLines(annotation.text);
+    const lineHeight = textLineHeight(annotation.fontSize);
+    for (const [index, line] of lines.entries()) {
+      ctx.strokeText(line, annotation.x, annotation.y + index * lineHeight);
+    }
     ctx.fillStyle = annotation.color;
-    ctx.fillText(annotation.text, annotation.x, annotation.y);
+    for (const [index, line] of lines.entries()) {
+      ctx.fillText(line, annotation.x, annotation.y + index * lineHeight);
+    }
   }
   ctx.restore();
 }
@@ -133,11 +139,13 @@ export function annotationBounds(annotation: Annotation): Bounds {
     return normalizeBounds({ x: annotation.x1, y: annotation.y1 }, { x: annotation.x2, y: annotation.y2 });
   }
   if (annotation.type === 'text') {
+    const lines = textLines(annotation.text);
+    const longestLine = Math.max(...lines.map((line) => line.length));
     return {
       x: annotation.x,
       y: annotation.y,
-      w: Math.max(24, annotation.text.length * annotation.fontSize * 0.62),
-      h: annotation.fontSize * 1.2,
+      w: Math.max(24, longestLine * annotation.fontSize * 0.62),
+      h: Math.max(annotation.fontSize * 1.2, lines.length * textLineHeight(annotation.fontSize)),
     };
   }
   return { x: annotation.x, y: annotation.y, w: annotation.w, h: annotation.h };
@@ -205,4 +213,12 @@ function distanceToSegment(point: Point, start: Point, end: Point): number {
   }
   const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / (dx * dx + dy * dy)));
   return Math.hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy));
+}
+
+function textLines(text: string): string[] {
+  return text.split('\n');
+}
+
+function textLineHeight(fontSize: number): number {
+  return fontSize * 1.22;
 }
