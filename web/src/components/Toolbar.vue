@@ -4,7 +4,6 @@
       <div class="flex h-8 w-8 items-center justify-center rounded-md bg-neutral-950 text-sm font-semibold text-white">P</div>
       <div class="min-w-0">
         <div class="text-sm font-semibold leading-4 text-neutral-950">Panda Screenshot</div>
-        <div class="max-w-40 truncate text-xs leading-4 text-slate-500 lg:max-w-56">{{ activeTitle }}</div>
       </div>
     </div>
 
@@ -76,7 +75,6 @@ defineProps<{
   color: string;
   strokeWidth: number;
   zoom: number;
-  activeTitle: string;
   canExport: boolean;
 }>();
 

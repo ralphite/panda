@@ -37,16 +37,6 @@ strong {
   font-size: 14px;
 }
 
-span {
-  display: block;
-  max-width: 720px;
-  overflow: hidden;
-  color: #6b7280;
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 button {
   height: 34px;
   border: 1px solid #d7dde7;
@@ -109,4 +99,3 @@ main {
   inset: 0;
   cursor: crosshair;
 }
-

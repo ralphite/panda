@@ -5,7 +5,6 @@
       v-model:color="color"
       v-model:stroke-width="strokeWidth"
       :zoom="zoom"
-      :active-title="activeTitle"
       :can-export="Boolean(activeScreenshot)"
       @zoom="changeZoom"
       @upload="triggerUpload"
@@ -98,11 +97,6 @@ let saveTimer: number | undefined;
 let suppressSave = false;
 let pendingAnnotationSnapshot: AnnotationHistorySnapshot | null = null;
 let restoringAnnotationHistory = false;
-
-const activeTitle = computed(() => {
-  if (!activeScreenshot.value) return 'Editor';
-  return activeScreenshot.value.pageTitle || activeScreenshot.value.sourceUrl || activeScreenshot.value.id.slice(0, 8);
-});
 
 const dimensions = computed(() => {
   if (!activeScreenshot.value) return 'No image';

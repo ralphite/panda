@@ -11,7 +11,6 @@ const stage = document.getElementById('stage');
 const image = document.getElementById('screenshot');
 const overlay = document.getElementById('overlay');
 const message = document.getElementById('message');
-const title = document.getElementById('title');
 const resetButton = document.getElementById('reset');
 const uploadButton = document.getElementById('upload');
 const ctx = overlay.getContext('2d');
@@ -35,7 +34,6 @@ async function init() {
     return;
   }
 
-  title.textContent = state.capture.pageTitle || state.capture.sourceUrl || 'Full page capture';
   image.src = imageSource(state.capture);
   await image.decode();
   stage.hidden = false;

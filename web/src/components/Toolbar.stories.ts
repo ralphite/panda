@@ -8,7 +8,6 @@ const meta: Meta<typeof Toolbar> = {
     color: '#ef4444',
     strokeWidth: 3,
     zoom: 1,
-    activeTitle: 'Checkout page',
     canExport: true,
   },
 };
@@ -17,4 +16,3 @@ export default meta;
 type Story = StoryObj<typeof Toolbar>;
 
 export const Default: Story = {};
-
