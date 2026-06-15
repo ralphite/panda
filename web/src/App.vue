@@ -7,6 +7,8 @@
       :zoom="zoom"
       :can-export="Boolean(activeScreenshot)"
       @zoom="changeZoom"
+      @fit="fitImage"
+      @actual-size="setZoom(1)"
       @upload="triggerUpload"
       @copy="copyImage"
       @download="downloadImage"
@@ -351,6 +353,10 @@ function resetAnnotationHistory(): void {
 
 function changeZoom(delta: number): void {
   zoom.value = normalizeZoom(zoom.value + delta);
+}
+
+function fitImage(): void {
+  editorRef.value?.fitImageToViewport();
 }
 
 function setZoom(value: number): void {

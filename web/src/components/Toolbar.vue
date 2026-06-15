@@ -43,14 +43,22 @@
       </select>
     </div>
 
-    <div class="flex w-full items-center gap-2 overflow-x-auto lg:ml-auto lg:w-auto lg:overflow-visible">
-      <button class="tool-button" type="button" title="Zoom out" @click="$emit('zoom', -0.1)">
-        <ZoomOut :size="18" />
-      </button>
-      <span class="w-12 text-center text-xs font-medium text-slate-600">{{ Math.round(zoom * 100) }}%</span>
-      <button class="tool-button" type="button" title="Zoom in" @click="$emit('zoom', 0.1)">
-        <ZoomIn :size="18" />
-      </button>
+    <div class="flex w-full items-center gap-2 overflow-x-auto sm:gap-3 lg:ml-auto lg:w-auto lg:overflow-visible">
+      <div class="flex shrink-0 items-center gap-1 px-1 text-slate-600 sm:gap-3">
+        <button class="tool-button" type="button" title="Zoom out" @click="$emit('zoom', -0.1)">
+          <ZoomOut :size="18" :stroke-width="2" />
+        </button>
+        <button class="tool-button" type="button" title="Zoom in" @click="$emit('zoom', 0.1)">
+          <ZoomIn :size="18" :stroke-width="2" />
+        </button>
+        <button class="tool-button" type="button" title="Fit to screen" @click="$emit('fit')">
+          <Maximize2 :size="18" :stroke-width="2" />
+        </button>
+        <button class="tool-button" type="button" title="Actual size" @click="$emit('actualSize')">
+          <Minimize2 :size="18" :stroke-width="2" />
+        </button>
+        <span class="w-12 text-center text-sm font-medium text-slate-600">{{ Math.round(zoom * 100) }}%</span>
+      </div>
       <button class="tool-button" type="button" title="Import image" @click="$emit('upload')">
         <Upload :size="18" />
       </button>
@@ -67,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-import { ArrowRight, Circle, Copy, Download, Minus, MousePointer2, Pencil, Square, Type, Upload, ZoomIn, ZoomOut } from '@lucide/vue';
+import { ArrowRight, Circle, Copy, Download, Maximize2, Minimize2, Minus, MousePointer2, Pencil, Square, Type, Upload, ZoomIn, ZoomOut } from '@lucide/vue';
 import type { Tool } from '../types';
 
 defineProps<{
@@ -83,6 +91,8 @@ defineEmits<{
   'update:color': [string];
   'update:strokeWidth': [number];
   zoom: [number];
+  fit: [];
+  actualSize: [];
   upload: [];
   copy: [];
   download: [];

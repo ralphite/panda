@@ -520,5 +520,6 @@ function pixels(value: string): number {
 defineExpose({
   copyImage,
   downloadImage,
+  fitImageToViewport,
 });
 </script>
