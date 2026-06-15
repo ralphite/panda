@@ -11,8 +11,6 @@ const stage = document.getElementById('stage');
 const image = document.getElementById('screenshot');
 const overlay = document.getElementById('overlay');
 const message = document.getElementById('message');
-const resetButton = document.getElementById('reset');
-const uploadButton = document.getElementById('upload');
 const ctx = overlay.getContext('2d');
 
 void init();
@@ -42,33 +40,23 @@ async function init() {
   drawOverlay();
 }
 
-resetButton.addEventListener('click', () => {
-  state.selection = null;
-  uploadButton.disabled = true;
-  drawOverlay();
-});
-
-uploadButton.addEventListener('click', () => {
-  void uploadSelection();
-});
-
 overlay.addEventListener('pointerdown', (event) => {
+  if (state.uploading) return;
   const point = localPoint(event);
   state.dragging = { start: point, current: point };
   overlay.setPointerCapture(event.pointerId);
   state.selection = null;
-  uploadButton.disabled = true;
   drawOverlay();
 });
 
 overlay.addEventListener('pointermove', (event) => {
-  if (!state.dragging) return;
+  if (!state.dragging || state.uploading) return;
   state.dragging.current = localPoint(event);
   drawOverlay();
 });
 
 overlay.addEventListener('pointerup', (event) => {
-  if (!state.dragging) return;
+  if (!state.dragging || state.uploading) return;
   overlay.releasePointerCapture(event.pointerId);
   const rect = normalizedRect(state.dragging.start, state.dragging.current);
   state.dragging = null;
@@ -78,7 +66,6 @@ overlay.addEventListener('pointerup', (event) => {
     return;
   }
   state.selection = rect;
-  uploadButton.disabled = false;
   drawOverlay();
   void uploadSelection();
 });
@@ -96,8 +83,6 @@ async function uploadSelection() {
   if (!state.selection || state.uploading) return;
   try {
     state.uploading = true;
-    uploadButton.disabled = true;
-    uploadButton.textContent = 'Uploading';
     const imageData = cropSelection(state.selection);
     const res = await fetch(`${state.capture.serverOrigin}/api/screenshots`, {
       method: 'POST',
@@ -121,8 +106,6 @@ async function uploadSelection() {
     location.replace(`${state.capture.serverOrigin}${payload.url}`);
   } catch (error) {
     state.uploading = false;
-    uploadButton.disabled = false;
-    uploadButton.textContent = 'Upload';
     showMessage(error instanceof Error ? error.message : String(error));
     message.hidden = false;
   }
