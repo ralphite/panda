@@ -52,7 +52,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, shallowRef, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
 import { ImagePlus } from '@lucide/vue';
 import {
   createAnnotation,
@@ -107,6 +107,8 @@ interface TextDraft {
 }
 
 const textDraft = ref<TextDraft | null>(null);
+let viewportResizeObserver: ResizeObserver | null = null;
+let viewportResizeFrame = 0;
 
 type PointerState =
   | { mode: 'draw'; id: string; start: Point }
@@ -170,6 +172,21 @@ watch(
   },
 );
 
+onMounted(() => {
+  const viewport = viewportRef.value;
+  if (!viewport) return;
+  viewportResizeObserver = new ResizeObserver(() => {
+    window.cancelAnimationFrame(viewportResizeFrame);
+    viewportResizeFrame = window.requestAnimationFrame(fitImageToViewport);
+  });
+  viewportResizeObserver.observe(viewport);
+});
+
+onUnmounted(() => {
+  viewportResizeObserver?.disconnect();
+  window.cancelAnimationFrame(viewportResizeFrame);
+});
+
 async function loadImage(): Promise<void> {
   textDraft.value = null;
   pointerState.value = null;
@@ -185,9 +202,17 @@ async function loadImage(): Promise<void> {
   imageRef.value = img;
   canvasSize.value = { width: img.naturalWidth, height: img.naturalHeight };
   await nextTick();
-  emit('fit-zoom', fitZoomForBounds(canvasSize.value, availableViewportSize()));
+  fitImageToViewport();
   render();
   emit('status', 'Screenshot loaded');
+}
+
+function fitImageToViewport(): void {
+  if (!props.screenshot || canvasSize.value.width <= 0 || canvasSize.value.height <= 0) return;
+  const nextZoom = fitZoomForBounds(canvasSize.value, availableViewportSize());
+  if (Math.abs(nextZoom - props.zoom) >= 0.01) {
+    emit('fit-zoom', nextZoom);
+  }
 }
 
 function availableViewportSize(): { width: number; height: number } {

@@ -1,5 +1,5 @@
 <template>
-  <aside class="flex h-56 w-full shrink-0 flex-col border-t border-slate-200 bg-white lg:h-auto lg:w-80 lg:border-l lg:border-t-0">
+  <aside class="hidden h-auto w-80 shrink-0 flex-col border-l border-slate-200 bg-white lg:flex">
     <div class="flex h-12 items-center justify-between border-b border-slate-200 px-4">
       <h2 class="text-sm font-semibold text-neutral-950">Inspector</h2>
       <button v-if="annotation" class="tool-button h-8 w-8 text-red-600 hover:text-red-700" type="button" title="Delete" @click="$emit('delete')">

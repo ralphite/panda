@@ -244,9 +244,11 @@ async function uploadBlob(blob: Blob, sourceUrl: string, pageTitle: string): Pro
 
 function onKeyDown(event: KeyboardEvent): void {
   const target = event.target as HTMLElement | null;
-  if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+  if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return;
 
-  if (!event.metaKey && !event.ctrlKey && !event.altKey && event.key === 'Escape') {
+  const hasShortcutModifier = event.metaKey || event.ctrlKey || event.altKey;
+
+  if (!hasShortcutModifier && event.key === 'Escape') {
     if (selectedId.value) {
       event.preventDefault();
       selectedId.value = null;
@@ -267,7 +269,9 @@ function onKeyDown(event: KeyboardEvent): void {
     return;
   }
 
-  if (!event.metaKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'c') {
+  if (hasShortcutModifier) return;
+
+  if (key === 'c') {
     event.preventDefault();
     void copyImage();
     return;
