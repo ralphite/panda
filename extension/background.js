@@ -5,6 +5,7 @@ const CAPTURE_MAX_AGE_MS = 30 * 60 * 1000;
 const CLEANUP_ALARM_NAME = 'panda-capture-cleanup';
 const CLEANUP_INTERVAL_MINUTES = 5;
 const FULL_PAGE_MENU_ID = 'panda-full-page-screenshot';
+const TAKE_SCREENSHOT_COMMAND = 'take-screenshot';
 
 if (!globalThis.PandaCaptureStore && typeof importScripts === 'function') {
   importScripts('capture-store.js');
@@ -20,6 +21,10 @@ void initialCleanup;
 
 chrome.action.onClicked.addListener((tab) => {
   void onActionClicked(tab);
+});
+
+chrome.commands.onCommand.addListener((command, tab) => {
+  void onCommand(command, tab);
 });
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -87,10 +92,23 @@ async function onActionClicked(tab) {
   await captureTab(tab, 'visible');
 }
 
+async function onCommand(command, tab) {
+  if (command !== TAKE_SCREENSHOT_COMMAND) return;
+  const activeTab = tab ?? await currentActiveTab();
+  if (activeTab) {
+    await captureTab(activeTab, 'visible');
+  }
+}
+
 async function onContextMenuClicked(info, tab) {
   if (info.menuItemId === FULL_PAGE_MENU_ID && tab) {
     await captureTab(tab, 'fullPage');
   }
+}
+
+async function currentActiveTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab;
 }
 
 async function installContextMenu() {
@@ -381,6 +399,7 @@ if (globalThis.__pandaBackgroundTest) {
     initialContextMenu,
     initialCleanup,
     installContextMenu,
+    onCommand,
     onActionClicked,
     onContextMenuClicked,
     storeCapture,

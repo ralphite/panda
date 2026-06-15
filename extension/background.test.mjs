@@ -30,6 +30,32 @@ test('default action captures only the visible viewport', async () => {
   }
 });
 
+test('keyboard command captures the visible viewport', async () => {
+  const { api, captures, eventHandlers, metrics, restore, sessionStore } = await loadBackground({}, {
+    captureVisibleDataUrl: 'data:image/png;base64,cG5n',
+  });
+  try {
+    assert.equal(typeof eventHandlers.command, 'function');
+    await api.onCommand('take-screenshot', {
+      id: 57,
+      windowId: 1,
+      index: 0,
+      title: 'Shortcut page',
+      url: 'https://example.test/shortcut',
+    });
+
+    const capture = Object.values(captures)[0];
+    assert.equal(metrics.captureVisibleTabCalls, 1);
+    assert.equal(metrics.executeScriptCalls, 0);
+    assert.equal(capture.pageTitle, 'Shortcut page');
+    assert.equal(capture.sourceUrl, 'https://example.test/shortcut');
+    assert.equal(capture.imageBlob.size, 3);
+    assert.deepEqual(Object.keys(sessionStore), ['captureTab:100']);
+  } finally {
+    restore();
+  }
+});
+
 test('context menu captures a full page screenshot', async () => {
   const { api, captures, metrics, restore } = await loadBackground({}, {
     captureVisibleDataUrl: 'data:image/png;base64,cG5n',
@@ -231,6 +257,9 @@ async function loadBackground(initialStore, options = {}) {
         metrics.contextMenuRemoveAllCalls += 1;
       },
     },
+    commands: {
+      onCommand: { addListener(handler) { eventHandlers.command = handler; } },
+    },
     runtime: {
       getURL: (path) => `chrome-extension://panda/${path}`,
       onInstalled: { addListener() {} },
@@ -268,6 +297,7 @@ async function loadBackground(initialStore, options = {}) {
         return { id: tabId };
       },
       onRemoved: { addListener() {} },
+      query: async () => options.activeTabs ?? [],
     },
   };
 

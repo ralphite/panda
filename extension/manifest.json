@@ -6,6 +6,15 @@
   "action": {
     "default_title": "Capture with Panda"
   },
+  "commands": {
+    "take-screenshot": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+P",
+        "mac": "MacCtrl+Shift+P"
+      },
+      "description": "Capture with Panda"
+    }
+  },
   "background": {
     "service_worker": "background.js"
   },
