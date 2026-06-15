@@ -4,6 +4,7 @@ const CAPTURE_TAB_KEY_PREFIX = 'captureTab:';
 const CAPTURE_MAX_AGE_MS = 30 * 60 * 1000;
 const CLEANUP_ALARM_NAME = 'panda-capture-cleanup';
 const CLEANUP_INTERVAL_MINUTES = 5;
+const FULL_PAGE_MENU_ID = 'panda-full-page-screenshot';
 
 if (!globalThis.PandaCaptureStore && typeof importScripts === 'function') {
   importScripts('capture-store.js');
@@ -12,21 +13,29 @@ if (!globalThis.PandaCaptureStore && typeof importScripts === 'function') {
 const captureStore = globalThis.PandaCaptureStore;
 
 void installCleanupAlarm();
+const initialContextMenu = installContextMenu();
+void initialContextMenu;
 const initialCleanup = cleanupStaleCaptures({ removeUntracked: true });
 void initialCleanup;
 
 chrome.action.onClicked.addListener((tab) => {
-  void captureTab(tab);
+  void onActionClicked(tab);
 });
 
 chrome.runtime.onInstalled.addListener(() => {
   void installCleanupAlarm();
+  void installContextMenu();
   void cleanupStaleCaptures({ removeUntracked: true });
 });
 
 chrome.runtime.onStartup.addListener(() => {
   void installCleanupAlarm();
+  void installContextMenu();
   void cleanupStaleCaptures({ removeUntracked: true });
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  void onContextMenuClicked(info, tab);
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -39,7 +48,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   void cleanupCaptureForClosedTab(tabId);
 });
 
-async function captureTab(tab) {
+async function captureTab(tab, mode = 'visible') {
   if (!tab.id || !tab.windowId || tab.url?.startsWith('chrome://') || tab.url?.startsWith('chrome-extension://')) {
     await openErrorTab(tab, 'This page cannot be captured by a Chrome extension.');
     return;
@@ -51,7 +60,7 @@ async function captureTab(tab) {
     await chrome.action.setBadgeText({ text: '...' });
     await chrome.action.setBadgeBackgroundColor({ color: '#2563eb' });
 
-    const capture = await captureFullPage(tab);
+    const capture = mode === 'fullPage' ? await captureFullPage(tab) : await captureVisiblePage(tab);
     const captureId = crypto.randomUUID();
     captureKey = `${CAPTURE_KEY_PREFIX}${captureId}`;
     await storeCapture(captureKey, capture, tab);
@@ -72,6 +81,25 @@ async function captureTab(tab) {
   } finally {
     await chrome.action.setBadgeText({ text: '' });
   }
+}
+
+async function onActionClicked(tab) {
+  await captureTab(tab, 'visible');
+}
+
+async function onContextMenuClicked(info, tab) {
+  if (info.menuItemId === FULL_PAGE_MENU_ID && tab) {
+    await captureTab(tab, 'fullPage');
+  }
+}
+
+async function installContextMenu() {
+  await chrome.contextMenus.removeAll();
+  await chrome.contextMenus.create({
+    id: FULL_PAGE_MENU_ID,
+    title: 'Full-page Screenshot',
+    contexts: ['action'],
+  });
 }
 
 async function installCleanupAlarm() {
@@ -217,6 +245,15 @@ async function tabExists(tabId) {
   }
 }
 
+async function captureVisiblePage(tab) {
+  const imageData = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+  return {
+    imageBlob: await dataURLToBlob(imageData),
+    url: tab.url || '',
+    title: tab.title || '',
+  };
+}
+
 async function captureFullPage(tab) {
   const metrics = await execute(tab.id, () => {
     const doc = document.documentElement;
@@ -340,7 +377,12 @@ if (globalThis.__pandaBackgroundTest) {
   globalThis.__pandaBackgroundTest.api = {
     cleanupCaptureForClosedTab,
     cleanupStaleCaptures,
+    captureTab,
+    initialContextMenu,
     initialCleanup,
+    installContextMenu,
+    onActionClicked,
+    onContextMenuClicked,
     storeCapture,
   };
 }

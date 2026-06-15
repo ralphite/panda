@@ -9,6 +9,6 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": ["activeTab", "alarms", "scripting", "storage", "tabs"],
+  "permissions": ["activeTab", "alarms", "contextMenus", "scripting", "storage", "tabs"],
   "host_permissions": ["http://localhost:8086/*", "<all_urls>"]
 }

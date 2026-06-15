@@ -5,6 +5,71 @@ import test from 'node:test';
 const require = createRequire(import.meta.url);
 const BACKGROUND_PATH = new URL('./background.js', import.meta.url).pathname;
 
+test('default action captures only the visible viewport', async () => {
+  const { api, captures, metrics, restore, sessionStore } = await loadBackground({}, {
+    captureVisibleDataUrl: 'data:image/png;base64,cG5n',
+  });
+  try {
+    await api.onActionClicked({
+      id: 55,
+      windowId: 1,
+      index: 0,
+      title: 'Visible page',
+      url: 'https://example.test/visible',
+    });
+
+    const capture = Object.values(captures)[0];
+    assert.equal(metrics.captureVisibleTabCalls, 1);
+    assert.equal(metrics.executeScriptCalls, 0);
+    assert.equal(capture.pageTitle, 'Visible page');
+    assert.equal(capture.sourceUrl, 'https://example.test/visible');
+    assert.equal(capture.imageBlob.size, 3);
+    assert.deepEqual(Object.keys(sessionStore), ['captureTab:100']);
+  } finally {
+    restore();
+  }
+});
+
+test('context menu captures a full page screenshot', async () => {
+  const { api, captures, metrics, restore } = await loadBackground({}, {
+    captureVisibleDataUrl: 'data:image/png;base64,cG5n',
+    metricsResult: {
+      url: 'https://example.test/full',
+      title: 'Full page',
+      scrollWidth: 100,
+      scrollHeight: 80,
+      viewportWidth: 100,
+      viewportHeight: 80,
+      originalX: 0,
+      originalY: 0,
+    },
+    scrollResult: { x: 0, y: 0 },
+  });
+  try {
+    await api.initialContextMenu;
+    assert.equal(metrics.contextMenuRemoveAllCalls, 1);
+    assert.equal(metrics.contextMenuCreateCalls, 1);
+    assert.equal(metrics.contextMenuCreateArgs[0].title, 'Full-page Screenshot');
+
+    await api.onContextMenuClicked({ menuItemId: 'panda-full-page-screenshot' }, {
+      id: 56,
+      windowId: 1,
+      index: 0,
+      title: 'Tab title',
+      url: 'https://example.test/tab',
+    });
+
+    const capture = Object.values(captures)[0];
+    assert.equal(metrics.captureVisibleTabCalls, 1);
+    assert.equal(metrics.executeScriptCalls > 0, true);
+    assert.equal(capture.pageTitle, 'Full page');
+    assert.equal(capture.sourceUrl, 'https://example.test/full');
+    assert.equal(capture.imageBlob.size, 3);
+  } finally {
+    restore();
+  }
+});
+
 test('removes a temporary capture when its crop tab closes', async () => {
   const { api, captures, restore, sessionStore } = await loadBackground();
   try {
@@ -94,14 +159,43 @@ test('stores temporary image data in IndexedDB only', async () => {
 async function loadBackground(initialStore, options = {}) {
   const sessionStore = { ...initialStore };
   const captures = {};
+  const eventHandlers = {};
+  const metrics = {
+    captureVisibleTabCalls: 0,
+    contextMenuCreateArgs: [],
+    contextMenuCreateCalls: 0,
+    contextMenuRemoveAllCalls: 0,
+    executeScriptCalls: 0,
+  };
   const openTabs = new Set(options.openTabs ?? []);
   const originalChrome = globalThis.chrome;
+  const originalCreateImageBitmap = globalThis.createImageBitmap;
+  const originalOffscreenCanvas = globalThis.OffscreenCanvas;
   const originalCaptureStore = globalThis.PandaCaptureStore;
   const originalTestHook = globalThis.__pandaBackgroundTest;
   const originalDateNow = Date.now;
 
   globalThis.__pandaBackgroundTest = {};
   Date.now = () => options.now ?? originalDateNow();
+  globalThis.createImageBitmap = async () => ({
+    close() {},
+    height: options.bitmapHeight ?? 80,
+    width: options.bitmapWidth ?? 100,
+  });
+  globalThis.OffscreenCanvas = class {
+    constructor(width, height) {
+      this.width = width;
+      this.height = height;
+    }
+
+    getContext() {
+      return { drawImage() {} };
+    }
+
+    async convertToBlob() {
+      return new Blob(['png'], { type: 'image/png' });
+    }
+  };
   globalThis.PandaCaptureStore = {
     deleteCapture: async (key) => {
       delete captures[key];
@@ -119,7 +213,7 @@ async function loadBackground(initialStore, options = {}) {
   };
   globalThis.chrome = {
     action: {
-      onClicked: { addListener() {} },
+      onClicked: { addListener(handler) { eventHandlers.actionClicked = handler; } },
       setBadgeText: async () => {},
       setBadgeBackgroundColor: async () => {},
     },
@@ -127,13 +221,29 @@ async function loadBackground(initialStore, options = {}) {
       create: async () => {},
       onAlarm: { addListener() {} },
     },
+    contextMenus: {
+      create: async (args) => {
+        metrics.contextMenuCreateCalls += 1;
+        metrics.contextMenuCreateArgs.push(args);
+      },
+      onClicked: { addListener(handler) { eventHandlers.contextMenuClicked = handler; } },
+      removeAll: async () => {
+        metrics.contextMenuRemoveAllCalls += 1;
+      },
+    },
     runtime: {
       getURL: (path) => `chrome-extension://panda/${path}`,
       onInstalled: { addListener() {} },
       onStartup: { addListener() {} },
     },
     scripting: {
-      executeScript: async () => [{ result: null }],
+      executeScript: async ({ func }) => {
+        metrics.executeScriptCalls += 1;
+        if (String(func).includes('scrollWidth')) {
+          return [{ result: options.metricsResult ?? null }];
+        }
+        return [{ result: options.scrollResult ?? null }];
+      },
     },
     storage: {
       session: {
@@ -148,7 +258,10 @@ async function loadBackground(initialStore, options = {}) {
       },
     },
     tabs: {
-      captureVisibleTab: async () => 'data:image/png;base64,',
+      captureVisibleTab: async () => {
+        metrics.captureVisibleTabCalls += 1;
+        return options.captureVisibleDataUrl ?? 'data:image/png;base64,';
+      },
       create: async () => ({ id: 100 }),
       get: async (tabId) => {
         if (!openTabs.has(tabId)) throw new Error(`No tab with id ${tabId}`);
@@ -162,12 +275,17 @@ async function loadBackground(initialStore, options = {}) {
   require(BACKGROUND_PATH);
   const api = globalThis.__pandaBackgroundTest.api;
   await api.initialCleanup;
+  await api.initialContextMenu;
 
   return {
     api,
     captures,
+    eventHandlers,
+    metrics,
     restore: () => {
       globalThis.chrome = originalChrome;
+      globalThis.createImageBitmap = originalCreateImageBitmap;
+      globalThis.OffscreenCanvas = originalOffscreenCanvas;
       globalThis.PandaCaptureStore = originalCaptureStore;
       globalThis.__pandaBackgroundTest = originalTestHook;
       Date.now = originalDateNow;
