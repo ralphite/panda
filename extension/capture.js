@@ -1,5 +1,7 @@
 const state = {
   capture: null,
+  captureKey: null,
+  imageUrl: null,
   selection: null,
   dragging: null,
   uploading: false,
@@ -9,9 +11,6 @@ const stage = document.getElementById('stage');
 const image = document.getElementById('screenshot');
 const overlay = document.getElementById('overlay');
 const message = document.getElementById('message');
-const title = document.getElementById('title');
-const resetButton = document.getElementById('reset');
-const uploadButton = document.getElementById('upload');
 const ctx = overlay.getContext('2d');
 
 void init();
@@ -22,8 +21,8 @@ async function init() {
     showMessage('Missing capture id.');
     return;
   }
-  const payload = await chrome.storage.session.get(`capture:${id}`);
-  state.capture = payload[`capture:${id}`];
+  state.captureKey = `capture:${id}`;
+  state.capture = await loadCapture(state.captureKey);
   if (!state.capture) {
     showMessage('Capture data was not found.');
     return;
@@ -33,8 +32,7 @@ async function init() {
     return;
   }
 
-  title.textContent = state.capture.pageTitle || state.capture.sourceUrl || 'Full page capture';
-  image.src = state.capture.imageData;
+  image.src = imageSource(state.capture);
   await image.decode();
   stage.hidden = false;
   message.hidden = true;
@@ -42,33 +40,23 @@ async function init() {
   drawOverlay();
 }
 
-resetButton.addEventListener('click', () => {
-  state.selection = null;
-  uploadButton.disabled = true;
-  drawOverlay();
-});
-
-uploadButton.addEventListener('click', () => {
-  void uploadSelection();
-});
-
 overlay.addEventListener('pointerdown', (event) => {
+  if (state.uploading) return;
   const point = localPoint(event);
   state.dragging = { start: point, current: point };
   overlay.setPointerCapture(event.pointerId);
   state.selection = null;
-  uploadButton.disabled = true;
   drawOverlay();
 });
 
 overlay.addEventListener('pointermove', (event) => {
-  if (!state.dragging) return;
+  if (!state.dragging || state.uploading) return;
   state.dragging.current = localPoint(event);
   drawOverlay();
 });
 
 overlay.addEventListener('pointerup', (event) => {
-  if (!state.dragging) return;
+  if (!state.dragging || state.uploading) return;
   overlay.releasePointerCapture(event.pointerId);
   const rect = normalizedRect(state.dragging.start, state.dragging.current);
   state.dragging = null;
@@ -78,7 +66,6 @@ overlay.addEventListener('pointerup', (event) => {
     return;
   }
   state.selection = rect;
-  uploadButton.disabled = false;
   drawOverlay();
   void uploadSelection();
 });
@@ -88,12 +75,14 @@ window.addEventListener('resize', () => {
   drawOverlay();
 });
 
+window.addEventListener('pagehide', () => {
+  revokeImageUrl();
+});
+
 async function uploadSelection() {
   if (!state.selection || state.uploading) return;
   try {
     state.uploading = true;
-    uploadButton.disabled = true;
-    uploadButton.textContent = 'Uploading';
     const imageData = cropSelection(state.selection);
     const res = await fetch(`${state.capture.serverOrigin}/api/screenshots`, {
       method: 'POST',
@@ -109,14 +98,40 @@ async function uploadSelection() {
       throw new Error(payload?.error?.message || `${res.status} ${res.statusText}`);
     }
     const payload = await res.json();
+    if (state.captureKey) {
+      await PandaCaptureStore.deleteCapture(state.captureKey);
+      await chrome.storage.session.remove(state.captureKey);
+    }
+    revokeImageUrl();
     location.replace(`${state.capture.serverOrigin}${payload.url}`);
   } catch (error) {
     state.uploading = false;
-    uploadButton.disabled = false;
-    uploadButton.textContent = 'Upload';
     showMessage(error instanceof Error ? error.message : String(error));
     message.hidden = false;
   }
+}
+
+async function loadCapture(captureKey) {
+  const capture = await PandaCaptureStore.getCapture(captureKey);
+  if (capture) return capture;
+
+  const payload = await chrome.storage.session.get(captureKey);
+  return payload[captureKey];
+}
+
+function imageSource(capture) {
+  if (capture.imageBlob) {
+    revokeImageUrl();
+    state.imageUrl = URL.createObjectURL(capture.imageBlob);
+    return state.imageUrl;
+  }
+  return capture.imageData;
+}
+
+function revokeImageUrl() {
+  if (!state.imageUrl) return;
+  URL.revokeObjectURL(state.imageUrl);
+  state.imageUrl = null;
 }
 
 function cropSelection(selection) {
@@ -183,4 +198,3 @@ function showMessage(value) {
   message.textContent = value;
   message.hidden = false;
 }
-

@@ -1,5 +1,5 @@
 <template>
-  <aside class="flex h-56 w-full shrink-0 flex-col border-t border-slate-200 bg-white lg:h-auto lg:w-80 lg:border-l lg:border-t-0">
+  <aside class="hidden h-auto w-80 shrink-0 flex-col border-l border-slate-200 bg-white lg:flex">
     <div class="flex h-12 items-center justify-between border-b border-slate-200 px-4">
       <h2 class="text-sm font-semibold text-neutral-950">Inspector</h2>
       <button v-if="annotation" class="tool-button h-8 w-8 text-red-600 hover:text-red-700" type="button" title="Delete" @click="$emit('delete')">
@@ -23,11 +23,15 @@
           </div>
         </div>
 
-        <div v-if="annotation.type === 'line'" class="grid grid-cols-2 gap-2">
+        <div v-if="annotation.type === 'line' || annotation.type === 'arrow'" class="grid grid-cols-2 gap-2">
           <NumberField label="X1" :value="annotation.x1" @change="patch({ x1: $event })" />
           <NumberField label="Y1" :value="annotation.y1" @change="patch({ y1: $event })" />
           <NumberField label="X2" :value="annotation.x2" @change="patch({ x2: $event })" />
           <NumberField label="Y2" :value="annotation.y2" @change="patch({ y2: $event })" />
+        </div>
+
+        <div v-else-if="annotation.type === 'pencil'" class="text-xs text-slate-500">
+          {{ annotation.points.length }} points
         </div>
 
         <div v-else-if="annotation.type === 'text'" class="space-y-3">
@@ -51,21 +55,7 @@
       </section>
 
       <section v-else class="space-y-4">
-        <div>
-          <div class="text-xs font-semibold uppercase text-slate-400">Export</div>
-          <div class="mt-3 grid grid-cols-2 gap-2">
-            <button class="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white text-sm font-medium text-neutral-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" type="button" :disabled="!canExport" @click="$emit('copy')">
-              <Copy :size="15" />
-              Copy
-            </button>
-            <button class="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-blue-600 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40" type="button" :disabled="!canExport" @click="$emit('download')">
-              <Download :size="15" />
-              Save
-            </button>
-          </div>
-        </div>
-
-        <div v-if="screenshot" class="space-y-2 border-t border-slate-200 pt-4 text-sm">
+        <div v-if="screenshot" class="space-y-2 text-sm">
           <div class="flex justify-between gap-3">
             <span class="text-slate-500">Size</span>
             <span class="font-medium text-neutral-900">{{ screenshot.width }} x {{ screenshot.height }}</span>
@@ -82,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-import { Copy, Download, Trash2 } from '@lucide/vue';
+import { Trash2 } from '@lucide/vue';
 import NumberField from './NumberField.vue';
 import type { Annotation, AnnotationPatch, ScreenshotDetail } from '../types';
 
@@ -90,14 +80,11 @@ defineProps<{
   annotation: Annotation | null;
   screenshot: ScreenshotDetail | null;
   annotationCount: number;
-  canExport: boolean;
 }>();
 
 const emit = defineEmits<{
   patch: [AnnotationPatch];
   delete: [];
-  copy: [];
-  download: [];
 }>();
 
 function patch(value: AnnotationPatch): void {

@@ -1,5 +1,5 @@
 <template>
-  <aside class="flex h-44 w-full shrink-0 flex-col border-b border-slate-200 bg-white lg:h-auto lg:w-72 lg:border-b-0 lg:border-r">
+  <aside class="hidden h-auto w-72 shrink-0 flex-col border-r border-slate-200 bg-white xl:flex">
     <div class="flex h-12 items-center justify-between border-b border-slate-200 px-3">
       <h2 class="text-sm font-semibold text-neutral-950">Screenshots</h2>
       <button class="tool-button h-8 w-8" type="button" title="Import image" @click="$emit('upload')">

@@ -1,42 +1,275 @@
 const SERVER_ORIGIN = 'http://localhost:8086';
+const CAPTURE_KEY_PREFIX = 'capture:';
+const CAPTURE_TAB_KEY_PREFIX = 'captureTab:';
+const CAPTURE_MAX_AGE_MS = 30 * 60 * 1000;
+const CLEANUP_ALARM_NAME = 'panda-capture-cleanup';
+const CLEANUP_INTERVAL_MINUTES = 5;
+const FULL_PAGE_MENU_ID = 'panda-full-page-screenshot';
+const TAKE_SCREENSHOT_COMMAND = 'take-screenshot';
+
+if (!globalThis.PandaCaptureStore && typeof importScripts === 'function') {
+  importScripts('capture-store.js');
+}
+
+const captureStore = globalThis.PandaCaptureStore;
+
+void installCleanupAlarm();
+const initialContextMenu = installContextMenu();
+void initialContextMenu;
+const initialCleanup = cleanupStaleCaptures({ removeUntracked: true });
+void initialCleanup;
 
 chrome.action.onClicked.addListener((tab) => {
-  void captureTab(tab);
+  void onActionClicked(tab);
 });
 
-async function captureTab(tab) {
+chrome.commands.onCommand.addListener((command, tab) => {
+  void onCommand(command, tab);
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  void installCleanupAlarm();
+  void installContextMenu();
+  void cleanupStaleCaptures({ removeUntracked: true });
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  void installCleanupAlarm();
+  void installContextMenu();
+  void cleanupStaleCaptures({ removeUntracked: true });
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  void onContextMenuClicked(info, tab);
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === CLEANUP_ALARM_NAME) {
+    void cleanupStaleCaptures();
+  }
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  void cleanupCaptureForClosedTab(tabId);
+});
+
+async function captureTab(tab, mode = 'visible') {
   if (!tab.id || !tab.windowId || tab.url?.startsWith('chrome://') || tab.url?.startsWith('chrome-extension://')) {
     await openErrorTab(tab, 'This page cannot be captured by a Chrome extension.');
     return;
   }
 
+  let captureKey = null;
   try {
+    await cleanupStaleCaptures();
     await chrome.action.setBadgeText({ text: '...' });
     await chrome.action.setBadgeBackgroundColor({ color: '#2563eb' });
 
-    const capture = await captureFullPage(tab);
+    const capture = mode === 'fullPage' ? await captureFullPage(tab) : await captureVisiblePage(tab);
     const captureId = crypto.randomUUID();
-    await chrome.storage.session.set({
-      [`capture:${captureId}`]: {
-        imageData: capture.imageData,
-        sourceUrl: capture.url || tab.url || '',
-        pageTitle: capture.title || tab.title || '',
-        serverOrigin: SERVER_ORIGIN,
-        createdAt: Date.now(),
-      },
-    });
+    captureKey = `${CAPTURE_KEY_PREFIX}${captureId}`;
+    await storeCapture(captureKey, capture, tab);
 
-    await chrome.tabs.create({
+    const captureTab = await chrome.tabs.create({
       windowId: tab.windowId,
       index: tab.index,
       active: true,
       url: chrome.runtime.getURL(`capture.html?id=${encodeURIComponent(captureId)}`),
     });
+    await trackCaptureTab(captureTab.id, captureKey);
+    captureKey = null;
   } catch (error) {
+    if (captureKey) {
+      await deleteIndexedCaptures([captureKey]).catch(() => {});
+    }
     await openErrorTab(tab, error instanceof Error ? error.message : String(error));
   } finally {
     await chrome.action.setBadgeText({ text: '' });
   }
+}
+
+async function onActionClicked(tab) {
+  await captureTab(tab, 'visible');
+}
+
+async function onCommand(command, tab) {
+  if (command !== TAKE_SCREENSHOT_COMMAND) return;
+  const activeTab = tab ?? await currentActiveTab();
+  if (activeTab) {
+    await captureTab(activeTab, 'visible');
+  }
+}
+
+async function onContextMenuClicked(info, tab) {
+  if (info.menuItemId === FULL_PAGE_MENU_ID && tab) {
+    await captureTab(tab, 'fullPage');
+  }
+}
+
+async function currentActiveTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab;
+}
+
+async function installContextMenu() {
+  await chrome.contextMenus.removeAll();
+  await chrome.contextMenus.create({
+    id: FULL_PAGE_MENU_ID,
+    title: 'Full-page Screenshot',
+    contexts: ['action'],
+  });
+}
+
+async function installCleanupAlarm() {
+  await chrome.alarms.create(CLEANUP_ALARM_NAME, {
+    delayInMinutes: CLEANUP_INTERVAL_MINUTES,
+    periodInMinutes: CLEANUP_INTERVAL_MINUTES,
+  });
+}
+
+async function cleanupStaleCaptures(options = {}) {
+  const now = options.now ?? Date.now();
+  const removeUntracked = options.removeUntracked ?? false;
+  const entries = await chrome.storage.session.get(null);
+  const sessionKeysToRemove = new Set();
+  const indexedCaptureKeysToRemove = new Set();
+  const trackedCaptureKeys = new Set();
+
+  for (const [key, value] of Object.entries(entries)) {
+    if (!key.startsWith(CAPTURE_TAB_KEY_PREFIX)) continue;
+    const captureKey = captureKeyFromTabRef(value);
+    if (captureKey) trackedCaptureKeys.add(captureKey);
+  }
+
+  for (const [key, value] of Object.entries(entries)) {
+    if (!key.startsWith(CAPTURE_KEY_PREFIX)) continue;
+    if (!isExpiredCapture(value, now)) {
+      await migrateLegacySessionCapture(key, value);
+    }
+    sessionKeysToRemove.add(key);
+  }
+
+  const indexedCaptures = await captureStore.listCaptures();
+  const indexedCaptureKeys = new Set(indexedCaptures.map((capture) => capture.key));
+
+  for (const capture of indexedCaptures) {
+    if (isExpiredCapture(capture, now) || (removeUntracked && !trackedCaptureKeys.has(capture.key))) {
+      indexedCaptureKeysToRemove.add(capture.key);
+    }
+  }
+
+  for (const [key, value] of Object.entries(entries)) {
+    if (!key.startsWith(CAPTURE_TAB_KEY_PREFIX)) continue;
+
+    const captureKey = captureKeyFromTabRef(value);
+    const hasIndexedCapture = indexedCaptureKeys.has(captureKey) && !indexedCaptureKeysToRemove.has(captureKey);
+    const hasLegacySessionCapture = Object.prototype.hasOwnProperty.call(entries, captureKey) && !sessionKeysToRemove.has(captureKey);
+    if (!captureKey || (!hasIndexedCapture && !hasLegacySessionCapture)) {
+      sessionKeysToRemove.add(key);
+      continue;
+    }
+
+    const tabId = Number(key.slice(CAPTURE_TAB_KEY_PREFIX.length));
+    if (!Number.isInteger(tabId) || !(await tabExists(tabId))) {
+      sessionKeysToRemove.add(key);
+      if (captureKey) {
+        indexedCaptureKeysToRemove.add(captureKey);
+        sessionKeysToRemove.add(captureKey);
+      }
+    }
+  }
+
+  if (indexedCaptureKeysToRemove.size > 0) {
+    await deleteIndexedCaptures([...indexedCaptureKeysToRemove]);
+  }
+  if (sessionKeysToRemove.size > 0) {
+    await chrome.storage.session.remove([...sessionKeysToRemove]);
+  }
+}
+
+async function migrateLegacySessionCapture(captureKey, value) {
+  const capture = {
+    key: captureKey,
+    sourceUrl: value.sourceUrl || '',
+    pageTitle: value.pageTitle || '',
+    serverOrigin: value.serverOrigin || SERVER_ORIGIN,
+    createdAt: typeof value.createdAt === 'number' ? value.createdAt : Date.now(),
+  };
+  if (value.error) {
+    capture.error = value.error;
+  }
+  if (value.imageData) {
+    capture.imageBlob = await dataURLToBlob(value.imageData);
+  }
+  await captureStore.putCapture(capture);
+}
+
+async function cleanupCaptureForClosedTab(tabId) {
+  const tabKey = captureTabKey(tabId);
+  const entries = await chrome.storage.session.get(tabKey);
+  const captureKey = captureKeyFromTabRef(entries[tabKey]);
+  const keysToRemove = [tabKey];
+  if (captureKey) keysToRemove.push(captureKey);
+  await deleteIndexedCaptures([captureKey]);
+  await chrome.storage.session.remove(keysToRemove);
+}
+
+async function storeCapture(captureKey, capture, tab) {
+  await captureStore.putCapture({
+    key: captureKey,
+    imageBlob: capture.imageBlob,
+    sourceUrl: capture.url || tab.url || '',
+    pageTitle: capture.title || tab.title || '',
+    serverOrigin: SERVER_ORIGIN,
+    createdAt: Date.now(),
+  });
+}
+
+async function deleteIndexedCaptures(captureKeys) {
+  await captureStore.deleteCaptures(captureKeys);
+}
+
+async function trackCaptureTab(tabId, captureKey) {
+  if (!tabId || !captureKey) return;
+  await chrome.storage.session.set({
+    [captureTabKey(tabId)]: {
+      captureKey,
+      createdAt: Date.now(),
+    },
+  });
+}
+
+function captureTabKey(tabId) {
+  return `${CAPTURE_TAB_KEY_PREFIX}${tabId}`;
+}
+
+function captureKeyFromTabRef(value) {
+  if (typeof value === 'string') return value;
+  if (value && typeof value.captureKey === 'string') return value.captureKey;
+  return '';
+}
+
+function isExpiredCapture(value, now) {
+  const createdAt = value && typeof value.createdAt === 'number' ? value.createdAt : NaN;
+  return !Number.isFinite(createdAt) || now - createdAt >= CAPTURE_MAX_AGE_MS;
+}
+
+async function tabExists(tabId) {
+  try {
+    await chrome.tabs.get(tabId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function captureVisiblePage(tab) {
+  const imageData = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+  return {
+    imageBlob: await dataURLToBlob(imageData),
+    url: tab.url || '',
+    title: tab.title || '',
+  };
 }
 
 async function captureFullPage(tab) {
@@ -100,8 +333,7 @@ async function captureFullPage(tab) {
   }, [metrics.originalX, metrics.originalY]);
 
   const blob = await canvas.convertToBlob({ type: 'image/png' });
-  const imageData = await blobToDataURL(blob);
-  return { imageData, url: metrics.url, title: metrics.title };
+  return { imageBlob: blob, url: metrics.url, title: metrics.title };
 }
 
 async function execute(tabId, func, args = []) {
@@ -134,32 +366,42 @@ function axisPositions(max, step) {
 }
 
 async function dataURLToBitmap(dataUrl) {
-  const blob = await (await fetch(dataUrl)).blob();
-  return createImageBitmap(blob);
+  return createImageBitmap(await dataURLToBlob(dataUrl));
 }
 
-function blobToDataURL(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
+async function dataURLToBlob(dataUrl) {
+  return (await fetch(dataUrl)).blob();
 }
 
 async function openErrorTab(tab, message) {
   const captureId = crypto.randomUUID();
-  await chrome.storage.session.set({
-    [`capture:${captureId}`]: {
-      error: message,
-      serverOrigin: SERVER_ORIGIN,
-      createdAt: Date.now(),
-    },
+  const captureKey = `${CAPTURE_KEY_PREFIX}${captureId}`;
+  await captureStore.putCapture({
+    key: captureKey,
+    error: message,
+    serverOrigin: SERVER_ORIGIN,
+    createdAt: Date.now(),
   });
-  await chrome.tabs.create({
+  const captureTab = await chrome.tabs.create({
     windowId: tab.windowId,
     index: tab.index,
     active: true,
     url: chrome.runtime.getURL(`capture.html?id=${encodeURIComponent(captureId)}`),
   });
+  await trackCaptureTab(captureTab.id, captureKey);
+}
+
+if (globalThis.__pandaBackgroundTest) {
+  globalThis.__pandaBackgroundTest.api = {
+    cleanupCaptureForClosedTab,
+    cleanupStaleCaptures,
+    captureTab,
+    initialContextMenu,
+    initialCleanup,
+    installContextMenu,
+    onCommand,
+    onActionClicked,
+    onContextMenuClicked,
+    storeCapture,
+  };
 }
