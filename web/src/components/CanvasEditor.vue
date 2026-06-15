@@ -1,6 +1,6 @@
 <template>
   <main class="relative flex min-w-0 flex-1 flex-col bg-slate-100">
-    <div class="min-h-0 flex-1 overflow-auto p-3 lg:p-8">
+    <div ref="viewportRef" class="min-h-0 flex-1 overflow-auto p-3 lg:p-8">
       <div v-if="!screenshot" class="flex h-full min-h-[420px] items-center justify-center">
         <div class="max-w-sm text-center">
           <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-md bg-white text-slate-500 shadow-sm">
@@ -60,6 +60,7 @@ import {
   moveAnnotation,
   normalizeBounds,
 } from '../lib/editor';
+import { fitZoomForBounds } from '../lib/zoom';
 import type { Annotation, Point, ScreenshotDetail, Tool } from '../types';
 
 const props = defineProps<{
@@ -76,10 +77,12 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:annotations': [Annotation[]];
   'update:selectedId': [string | null];
+  'fit-zoom': [number];
   status: [string];
   upload: [];
 }>();
 
+const viewportRef = ref<HTMLElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const textInputRef = ref<HTMLTextAreaElement | null>(null);
 const imageRef = shallowRef<HTMLImageElement | null>(null);
@@ -153,8 +156,24 @@ async function loadImage(): Promise<void> {
   imageRef.value = img;
   canvasSize.value = { width: img.naturalWidth, height: img.naturalHeight };
   await nextTick();
+  emit('fit-zoom', fitZoomForBounds(canvasSize.value, availableViewportSize()));
   render();
   emit('status', 'Screenshot loaded');
+}
+
+function availableViewportSize(): { width: number; height: number } {
+  const viewport = viewportRef.value;
+  if (!viewport) {
+    return { width: canvasSize.value.width, height: canvasSize.value.height };
+  }
+
+  const style = getComputedStyle(viewport);
+  const horizontalPadding = pixels(style.paddingLeft) + pixels(style.paddingRight);
+  const verticalPadding = pixels(style.paddingTop) + pixels(style.paddingBottom);
+  return {
+    width: Math.max(1, viewport.clientWidth - horizontalPadding),
+    height: Math.max(1, viewport.clientHeight - verticalPadding),
+  };
 }
 
 function render(): void {
@@ -310,6 +329,11 @@ async function downloadImage(): Promise<void> {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function pixels(value: string): number {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 defineExpose({

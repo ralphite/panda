@@ -31,6 +31,7 @@
         :stroke-width="strokeWidth"
         :font-size="fontSize"
         :zoom="zoom"
+        @fit-zoom="setZoom"
         @status="setStatus"
         @upload="triggerUpload"
       />
@@ -62,6 +63,7 @@ import ScreenshotRail from './components/ScreenshotRail.vue';
 import StatusBar from './components/StatusBar.vue';
 import Toolbar from './components/Toolbar.vue';
 import { patchAnnotation } from './lib/editor';
+import { normalizeZoom } from './lib/zoom';
 import type { Annotation, AnnotationPatch, ScreenshotDetail, ScreenshotSummary, Tool } from './types';
 
 const screenshots = ref<ScreenshotSummary[]>([]);
@@ -259,7 +261,11 @@ function onKeyDown(event: KeyboardEvent): void {
 }
 
 function changeZoom(delta: number): void {
-  zoom.value = Math.max(0.2, Math.min(2.5, Number((zoom.value + delta).toFixed(2))));
+  zoom.value = normalizeZoom(zoom.value + delta);
+}
+
+function setZoom(value: number): void {
+  zoom.value = normalizeZoom(value);
 }
 
 function onPopState(): void {
