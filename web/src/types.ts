@@ -1,5 +1,10 @@
 export type Tool = 'select' | 'rect' | 'oval' | 'line' | 'arrow' | 'pencil' | 'text';
 
+export interface DrawingStyle {
+  color: string;
+  strokeWidth: number;
+}
+
 export interface ScreenshotSummary {
   id: string;
   createdAt: string;

@@ -1,11 +1,16 @@
 <template>
   <div class="flex h-full w-full flex-col bg-slate-100 text-neutral-950">
     <Toolbar
-      v-model:tool="tool"
-      v-model:color="color"
-      v-model:stroke-width="strokeWidth"
+      :tool="tool"
+      :color="color"
+      :stroke-width="strokeWidth"
+      :recent-styles="recentStyles"
       :zoom="zoom"
       :can-export="Boolean(activeScreenshot)"
+      @update:tool="setTool"
+      @update:color="setColor"
+      @update:stroke-width="setStrokeWidth"
+      @apply-style="applyDrawingStyle"
       @zoom="changeZoom"
       @fit="fitImage"
       @actual-size="setZoom(1)"
@@ -75,7 +80,7 @@ import {
 import { patchAnnotation } from './lib/editor';
 import { normalizeZoom } from './lib/zoom';
 import type { AnnotationHistorySnapshot, AnnotationHistoryState } from './lib/annotationHistory';
-import type { Annotation, AnnotationPatch, ScreenshotDetail, ScreenshotSummary, Tool } from './types';
+import type { Annotation, AnnotationPatch, DrawingStyle, ScreenshotDetail, ScreenshotSummary, Tool } from './types';
 
 const screenshots = ref<ScreenshotSummary[]>([]);
 const activeScreenshot = ref<ScreenshotDetail | null>(null);
@@ -84,6 +89,7 @@ const selectedId = ref<string | null>(null);
 const tool = ref<Tool>('select');
 const color = ref('#ef4444');
 const strokeWidth = ref(3);
+const recentStyles = ref<DrawingStyle[]>([]);
 const fontSize = ref(24);
 const zoom = ref(1);
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -96,6 +102,18 @@ let saveTimer: number | undefined;
 let suppressSave = false;
 let pendingAnnotationSnapshot: AnnotationHistorySnapshot | null = null;
 let restoringAnnotationHistory = false;
+
+const recentStylesStorageKey = 'panda:recent-drawing-styles';
+const smartToolStyles: Record<Tool, DrawingStyle> = {
+  select: { color: '#ef4444', strokeWidth: 3 },
+  rect: { color: '#ef4444', strokeWidth: 3 },
+  oval: { color: '#ef4444', strokeWidth: 3 },
+  line: { color: '#ef4444', strokeWidth: 3 },
+  arrow: { color: '#ef4444', strokeWidth: 4 },
+  pencil: { color: '#facc15', strokeWidth: 8 },
+  text: { color: '#111827', strokeWidth: 3 },
+};
+const toolStyles = ref<Partial<Record<Tool, DrawingStyle>>>({});
 
 const dimensions = computed(() => {
   if (!activeScreenshot.value) return 'No image';
@@ -121,6 +139,7 @@ onMounted(async () => {
   window.addEventListener('popstate', onPopState);
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('paste', onPaste);
+  recentStyles.value = loadRecentStyles();
   await refreshScreenshots();
   const id = idFromPath();
   if (id) {
@@ -181,6 +200,43 @@ function patchSelected(patch: AnnotationPatch): void {
   const id = selectedId.value;
   if (!id) return;
   setAnnotations(annotations.value.map((annotation) => (annotation.id === id ? patchAnnotation(annotation, patch) : annotation)));
+}
+
+function setTool(nextTool: Tool): void {
+  if (tool.value === nextTool) return;
+  rememberToolStyle(tool.value);
+  tool.value = nextTool;
+  if (nextTool === 'select') return;
+  applyDrawingStyle(toolStyles.value[nextTool] ?? smartToolStyles[nextTool], false);
+}
+
+function setColor(nextColor: string): void {
+  color.value = normalizeColor(nextColor);
+  rememberToolStyle(tool.value);
+  recordRecentStyle(currentDrawingStyle());
+}
+
+function setStrokeWidth(nextStrokeWidth: number): void {
+  strokeWidth.value = normalizeStrokeWidth(nextStrokeWidth);
+  rememberToolStyle(tool.value);
+  recordRecentStyle(currentDrawingStyle());
+}
+
+function applyDrawingStyle(style: DrawingStyle, record = true): void {
+  color.value = normalizeColor(style.color);
+  strokeWidth.value = normalizeStrokeWidth(style.strokeWidth);
+  rememberToolStyle(tool.value);
+  if (record) {
+    recordRecentStyle(currentDrawingStyle());
+  }
+}
+
+function rememberToolStyle(targetTool: Tool): void {
+  if (targetTool === 'select') return;
+  toolStyles.value = {
+    ...toolStyles.value,
+    [targetTool]: currentDrawingStyle(),
+  };
 }
 
 function deleteSelected(): void {
@@ -290,7 +346,7 @@ function onKeyDown(event: KeyboardEvent): void {
   const tools: Record<string, Tool> = { v: 'select', r: 'rect', o: 'oval', l: 'line', a: 'arrow', p: 'pencil', t: 'text' };
   if (tools[key]) {
     event.preventDefault();
-    tool.value = tools[key];
+    setTool(tools[key]);
   }
 }
 
@@ -382,6 +438,52 @@ function idFromPath(): string | null {
 
 function setStatus(message: string): void {
   statusMessage.value = message;
+}
+
+function currentDrawingStyle(): DrawingStyle {
+  return { color: color.value, strokeWidth: strokeWidth.value };
+}
+
+function recordRecentStyle(style: DrawingStyle): void {
+  const normalized = {
+    color: normalizeColor(style.color),
+    strokeWidth: normalizeStrokeWidth(style.strokeWidth),
+  };
+  recentStyles.value = [
+    normalized,
+    ...recentStyles.value.filter((item) => normalizeColor(item.color) !== normalized.color || normalizeStrokeWidth(item.strokeWidth) !== normalized.strokeWidth),
+  ].slice(0, 3);
+  saveRecentStyles(recentStyles.value);
+}
+
+function loadRecentStyles(): DrawingStyle[] {
+  try {
+    const raw = window.localStorage.getItem(recentStylesStorageKey);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item): item is DrawingStyle => typeof item?.color === 'string' && typeof item?.strokeWidth === 'number')
+      .map((item) => ({ color: normalizeColor(item.color), strokeWidth: normalizeStrokeWidth(item.strokeWidth) }))
+      .slice(0, 3);
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentStyles(styles: DrawingStyle[]): void {
+  try {
+    window.localStorage.setItem(recentStylesStorageKey, JSON.stringify(styles));
+  } catch {
+    // Ignore storage errors; the picker still works for the current session.
+  }
+}
+
+function normalizeColor(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function normalizeStrokeWidth(value: number): number {
+  return Math.min(24, Math.max(1, Math.round(value)));
 }
 
 function blobToDataURL(blob: Blob): Promise<string> {

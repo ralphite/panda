@@ -26,14 +26,64 @@
     <div class="h-7 w-px bg-slate-200" />
 
     <div class="flex items-center gap-2">
-      <label class="relative h-8 w-8 overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm" title="Color">
-        <input
-          class="absolute inset-0 h-10 w-10 -translate-x-1 -translate-y-1 cursor-pointer border-0 p-0"
-          type="color"
-          :value="color"
-          @input="$emit('update:color', ($event.target as HTMLInputElement).value)"
-        />
-      </label>
+      <div ref="colorPickerRef" class="relative">
+        <button
+          class="inline-flex h-9 min-w-20 items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-2 text-sm font-medium text-neutral-800 shadow-sm hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+          :aria-expanded="isColorPickerOpen"
+          aria-haspopup="menu"
+          aria-label="Color"
+          title="Color"
+          type="button"
+          @click="toggleColorPicker"
+        >
+          <span class="h-5 w-5 rounded border border-slate-300 shadow-sm" :style="{ backgroundColor: color }" />
+          <ChevronDown :size="16" :stroke-width="2" />
+        </button>
+
+        <div
+          v-if="isColorPickerOpen"
+          class="absolute left-0 top-full z-50 mt-2 w-64 rounded-md border border-slate-200 bg-white p-2 shadow-xl"
+          role="menu"
+          @keydown.esc.stop.prevent="closeColorPicker"
+        >
+          <div v-if="recentStyles.length" class="mb-2 border-b border-slate-100 pb-2">
+            <div class="mb-1 px-1 text-[11px] font-semibold uppercase text-slate-500">Recent</div>
+            <div class="grid grid-cols-3 gap-1">
+              <button
+                v-for="style in recentStyles"
+                :key="`${style.color}-${style.strokeWidth}`"
+                class="flex h-8 items-center gap-2 rounded-md border border-slate-200 bg-white px-2 text-xs font-medium text-neutral-800 hover:border-neutral-950 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+                :title="`${style.strokeWidth} px`"
+                type="button"
+                @click="chooseStyle(style)"
+              >
+                <span class="h-4 w-4 rounded border border-slate-300 shadow-sm" :style="{ backgroundColor: style.color }" />
+                {{ style.strokeWidth }} px
+              </button>
+            </div>
+          </div>
+
+          <div class="mb-2 grid grid-cols-5 gap-1">
+            <button
+              v-for="item in popularColors"
+              :key="item.value"
+              class="h-8 rounded-md border shadow-sm transition hover:border-neutral-950 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+              :class="isSelectedColor(item.value) ? 'border-neutral-950 ring-2 ring-neutral-950 ring-offset-1' : 'border-slate-200'"
+              :style="{ backgroundColor: item.value }"
+              :aria-label="item.label"
+              :title="item.label"
+              type="button"
+              @click="chooseColor(item.value)"
+            />
+          </div>
+
+          <label class="relative flex h-9 cursor-pointer items-center gap-2 overflow-hidden rounded-md border border-slate-200 bg-white px-2 text-sm font-medium text-neutral-800 hover:border-neutral-950 hover:bg-slate-50">
+            <span class="h-5 w-5 rounded border border-slate-300 shadow-sm" :style="customColorStyle" />
+            Custom
+            <input class="absolute inset-0 cursor-pointer opacity-0" type="color" :value="color" @change="chooseCustomColor" />
+          </label>
+        </div>
+      </div>
       <select class="panel-field w-20" :value="strokeWidth" title="Stroke width" @change="$emit('update:strokeWidth', Number(($event.target as HTMLSelectElement).value))">
         <option :value="2">2 px</option>
         <option :value="3">3 px</option>
@@ -75,21 +125,26 @@
 </template>
 
 <script setup lang="ts">
-import { ArrowRight, Circle, Copy, Download, Maximize2, Minimize2, Minus, MousePointer2, Pencil, Square, Type, Upload, ZoomIn, ZoomOut } from '@lucide/vue';
-import type { Tool } from '../types';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { ArrowRight, ChevronDown, Circle, Copy, Download, Maximize2, Minimize2, Minus, MousePointer2, Pencil, Square, Type, Upload, ZoomIn, ZoomOut } from '@lucide/vue';
+import type { DrawingStyle, Tool } from '../types';
 
-defineProps<{
+const props = withDefaults(defineProps<{
   tool: Tool;
   color: string;
   strokeWidth: number;
+  recentStyles?: DrawingStyle[];
   zoom: number;
   canExport: boolean;
-}>();
+}>(), {
+  recentStyles: () => [],
+});
 
-defineEmits<{
+const emit = defineEmits<{
   'update:tool': [Tool];
   'update:color': [string];
   'update:strokeWidth': [number];
+  'apply-style': [DrawingStyle];
   zoom: [number];
   fit: [];
   actualSize: [];
@@ -107,4 +162,71 @@ const tools = [
   { id: 'pencil', label: 'Pencil', shortcut: 'P', icon: Pencil },
   { id: 'text', label: 'Text', shortcut: 'T', icon: Type },
 ] satisfies Array<{ id: Tool; label: string; shortcut: string; icon: unknown }>;
+
+const popularColors = [
+  { label: 'Red', value: '#ef4444' },
+  { label: 'Orange', value: '#f97316' },
+  { label: 'Yellow', value: '#facc15' },
+  { label: 'Green', value: '#22c55e' },
+  { label: 'Cyan', value: '#06b6d4' },
+  { label: 'Blue', value: '#3b82f6' },
+  { label: 'Purple', value: '#a855f7' },
+  { label: 'Pink', value: '#ec4899' },
+  { label: 'Black', value: '#111827' },
+  { label: 'White', value: '#ffffff' },
+] as const;
+
+const colorPickerRef = ref<HTMLElement | null>(null);
+const isColorPickerOpen = ref(false);
+const presetColors = new Set<string>(popularColors.map((item) => item.value));
+
+const customColorStyle = computed(() => {
+  const color = props.color.toLowerCase();
+  if (presetColors.has(color)) {
+    return {
+      background: 'conic-gradient(#ef4444, #f97316, #facc15, #22c55e, #06b6d4, #3b82f6, #a855f7, #ec4899, #ef4444)',
+    };
+  }
+  return { backgroundColor: props.color };
+});
+
+onMounted(() => {
+  document.addEventListener('pointerdown', onDocumentPointerDown);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', onDocumentPointerDown);
+});
+
+function toggleColorPicker(): void {
+  isColorPickerOpen.value = !isColorPickerOpen.value;
+}
+
+function closeColorPicker(): void {
+  isColorPickerOpen.value = false;
+}
+
+function chooseColor(value: string): void {
+  emit('update:color', value);
+  closeColorPicker();
+}
+
+function chooseStyle(style: DrawingStyle): void {
+  emit('apply-style', style);
+  closeColorPicker();
+}
+
+function chooseCustomColor(event: Event): void {
+  chooseColor((event.target as HTMLInputElement).value);
+}
+
+function onDocumentPointerDown(event: PointerEvent): void {
+  const target = event.target;
+  if (target instanceof Node && colorPickerRef.value?.contains(target)) return;
+  closeColorPicker();
+}
+
+function isSelectedColor(value: string): boolean {
+  return props.color.toLowerCase() === value;
+}
 </script>
