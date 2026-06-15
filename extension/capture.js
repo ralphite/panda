@@ -1,5 +1,6 @@
 const state = {
   capture: null,
+  captureKey: null,
   selection: null,
   dragging: null,
   uploading: false,
@@ -22,8 +23,9 @@ async function init() {
     showMessage('Missing capture id.');
     return;
   }
-  const payload = await chrome.storage.session.get(`capture:${id}`);
-  state.capture = payload[`capture:${id}`];
+  state.captureKey = `capture:${id}`;
+  const payload = await chrome.storage.session.get(state.captureKey);
+  state.capture = payload[state.captureKey];
   if (!state.capture) {
     showMessage('Capture data was not found.');
     return;
@@ -109,6 +111,9 @@ async function uploadSelection() {
       throw new Error(payload?.error?.message || `${res.status} ${res.statusText}`);
     }
     const payload = await res.json();
+    if (state.captureKey) {
+      await chrome.storage.session.remove(state.captureKey);
+    }
     location.replace(`${state.capture.serverOrigin}${payload.url}`);
   } catch (error) {
     state.uploading = false;
@@ -183,4 +188,3 @@ function showMessage(value) {
   message.textContent = value;
   message.hidden = false;
 }
-
