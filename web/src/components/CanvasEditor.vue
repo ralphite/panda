@@ -171,10 +171,11 @@ function onPointerDown(event: PointerEvent): void {
   const point = toCanvasPoint(event);
 
   if (props.tool === 'text') {
-    textDraft.value = { point, value: '' };
+    textDraft.value = { point, value: 'Text' };
     emit('update:selectedId', null);
     nextTick(() => {
       textInputRef.value?.focus();
+      textInputRef.value?.select();
     });
     return;
   }
