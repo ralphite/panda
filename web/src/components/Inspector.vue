@@ -54,7 +54,7 @@
         <div>
           <div class="text-xs font-semibold uppercase text-slate-400">Export</div>
           <div class="mt-3 grid grid-cols-2 gap-2">
-            <button class="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white text-sm font-medium text-neutral-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" type="button" :disabled="!canExport" @click="$emit('copy')">
+            <button class="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white text-sm font-medium text-neutral-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" type="button" title="Copy image (C)" :disabled="!canExport" @click="$emit('copy')">
               <Copy :size="15" />
               Copy
             </button>

@@ -28,5 +28,4 @@ Open http://localhost:8086/screenshot.
 - `L` line
 - `T` text
 - `Delete` remove selection
-- `Cmd/Ctrl+C` copy annotated image
-
+- `C` copy annotated image

@@ -236,7 +236,7 @@ function onKeyDown(event: KeyboardEvent): void {
   const target = event.target as HTMLElement | null;
   if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
 
-  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c') {
+  if (!event.metaKey && !event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'c') {
     event.preventDefault();
     void copyImage();
     return;
