@@ -1,4 +1,4 @@
-const SERVER_ORIGIN = 'http://localhost:8086';
+const SERVER_ORIGIN = 'http://localhost:8088';
 const CAPTURE_KEY_PREFIX = 'capture:';
 const CAPTURE_TAB_KEY_PREFIX = 'captureTab:';
 const CAPTURE_MAX_AGE_MS = 30 * 60 * 1000;
