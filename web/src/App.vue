@@ -7,6 +7,7 @@
       :recent-styles="recentStyles"
       :zoom="zoom"
       :can-export="Boolean(activeScreenshot)"
+      :show-shortcuts="showShortcuts"
       @update:tool="setTool"
       @update:color="setColor"
       @update:stroke-width="setStrokeWidth"
@@ -17,6 +18,7 @@
       @upload="triggerUpload"
       @copy="copyImage"
       @copy-link="copyImageAddress"
+      @toggle-help="toggleShortcuts"
       @download="downloadImage"
     />
 
@@ -93,6 +95,7 @@ const strokeWidth = ref(3);
 const recentStyles = ref<DrawingStyle[]>([]);
 const fontSize = ref(24);
 const zoom = ref(1);
+const showShortcuts = ref(false);
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
 const statusMessage = ref('Ready');
 const editorRef = ref<InstanceType<typeof CanvasEditor> | null>(null);
@@ -336,6 +339,11 @@ function onKeyDown(event: KeyboardEvent): void {
   const hasShortcutModifier = event.metaKey || event.ctrlKey || event.altKey;
 
   if (!hasShortcutModifier && event.key === 'Escape') {
+    if (showShortcuts.value) {
+      event.preventDefault();
+      showShortcuts.value = false;
+      return;
+    }
     if (selectedId.value) {
       event.preventDefault();
       selectedId.value = null;
@@ -357,6 +365,24 @@ function onKeyDown(event: KeyboardEvent): void {
   }
 
   if (hasShortcutModifier) return;
+
+  if (event.key === '?') {
+    event.preventDefault();
+    toggleShortcuts();
+    return;
+  }
+
+  if (event.key === '+' || event.key === '=') {
+    event.preventDefault();
+    changeZoom(0.1);
+    return;
+  }
+
+  if (event.key === '-' || event.key === '_') {
+    event.preventDefault();
+    changeZoom(-0.1);
+    return;
+  }
 
   if (key === 'c') {
     event.preventDefault();
@@ -467,6 +493,10 @@ function idFromPath(): string | null {
 
 function setStatus(message: string): void {
   statusMessage.value = message;
+}
+
+function toggleShortcuts(): void {
+  showShortcuts.value = !showShortcuts.value;
 }
 
 function currentDrawingStyle(): DrawingStyle {

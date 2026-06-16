@@ -42,3 +42,26 @@ textarea {
 .panel-field {
   @apply h-8 rounded-md border border-slate-200 bg-white px-2 text-sm text-neutral-900 shadow-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100;
 }
+
+.kbd-bubble {
+  @apply pointer-events-none absolute left-1/2 top-full z-50 mt-2 flex h-5 min-w-[20px] -translate-x-1/2 items-center justify-center rounded-md bg-neutral-900 px-1.5 font-mono text-xs font-medium text-white shadow-sm;
+}
+
+.kbd-bubble::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 4px solid #171717;
+}
+
+.kbd-legend {
+  @apply pointer-events-none absolute left-full top-full z-40 ml-3 mt-2 flex items-center gap-2 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-500 shadow-sm;
+}
+
+.kbd-cap {
+  @apply rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-700;
+}

@@ -1,27 +1,32 @@
 <template>
-  <header class="flex min-h-14 shrink-0 flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 lg:h-14 lg:flex-nowrap lg:gap-3 lg:px-4 lg:py-0">
-    <div class="flex min-w-0 items-center gap-2 pr-2">
-      <div class="flex h-8 w-8 items-center justify-center rounded-md bg-neutral-950 text-sm font-semibold text-white">P</div>
+  <header class="relative z-20 flex min-h-14 shrink-0 flex-col border-b border-slate-200 bg-white lg:h-14 lg:flex-row lg:items-stretch">
+    <div class="flex h-12 min-w-0 items-center gap-2 border-b border-slate-200 px-4 lg:h-auto lg:border-b-0 lg:border-r xl:w-72">
+      <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-neutral-950 text-sm font-semibold text-white">P</div>
       <div class="min-w-0">
-        <div class="text-sm font-semibold leading-4 text-neutral-950">Panda Screenshot</div>
+        <div class="truncate text-sm font-semibold leading-4 text-neutral-950">Panda Screenshot</div>
       </div>
     </div>
 
-    <div class="h-7 w-px bg-slate-200" />
-
-    <nav class="flex items-center gap-1" aria-label="Tools">
+    <div class="flex flex-1 flex-wrap items-center gap-2 px-3 py-2 lg:flex-nowrap lg:gap-3 lg:px-4 lg:py-0">
+      <div class="relative flex items-center">
+      <nav class="flex items-center gap-1" aria-label="Tools">
       <button
         v-for="item in tools"
         :key="item.id"
-        class="tool-button"
+        class="tool-button relative"
         :class="{ 'tool-button-active': tool === item.id }"
         :title="`${item.label} (${item.shortcut})`"
         type="button"
         @click="$emit('update:tool', item.id)"
       >
         <component :is="item.icon" :size="18" :stroke-width="2" />
+        <span v-if="showShortcuts" class="kbd-bubble">{{ item.shortcut }}</span>
       </button>
-    </nav>
+      </nav>
+      <div v-if="showShortcuts" class="kbd-legend">
+        <kbd v-for="entry in shortcutLegend" :key="entry.label" class="kbd-cap" :title="entry.label">{{ entry.keys }}</kbd>
+      </div>
+      </div>
 
     <div class="h-7 w-px bg-slate-200" />
 
@@ -84,22 +89,27 @@
           </label>
         </div>
       </div>
-      <select class="panel-field w-20" :value="strokeWidth" title="Stroke width" @change="$emit('update:strokeWidth', Number(($event.target as HTMLSelectElement).value))">
-        <option :value="2">2 px</option>
-        <option :value="3">3 px</option>
-        <option :value="5">5 px</option>
-        <option :value="8">8 px</option>
-        <option :value="12">12 px</option>
-      </select>
+      <div class="relative">
+        <select class="h-9 w-20 cursor-pointer appearance-none rounded-md border border-slate-200 bg-white pl-2 pr-7 text-sm text-neutral-900 shadow-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" :value="strokeWidth" title="Stroke width" @change="$emit('update:strokeWidth', Number(($event.target as HTMLSelectElement).value))">
+          <option :value="2">2 px</option>
+          <option :value="3">3 px</option>
+          <option :value="5">5 px</option>
+          <option :value="8">8 px</option>
+          <option :value="12">12 px</option>
+        </select>
+        <ChevronDown class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-500" :size="16" :stroke-width="2" />
+      </div>
     </div>
 
     <div class="flex w-full items-center gap-2 overflow-x-auto sm:gap-3 lg:ml-auto lg:w-auto lg:overflow-visible">
       <div class="flex shrink-0 items-center gap-1 px-1 text-slate-600 sm:gap-3">
-        <button class="tool-button" type="button" title="Zoom out" @click="$emit('zoom', -0.1)">
+        <button class="tool-button relative" type="button" title="Zoom out (-)" @click="$emit('zoom', -0.1)">
           <ZoomOut :size="18" :stroke-width="2" />
+          <span v-if="showShortcuts" class="kbd-bubble">−</span>
         </button>
-        <button class="tool-button" type="button" title="Zoom in" @click="$emit('zoom', 0.1)">
+        <button class="tool-button relative" type="button" title="Zoom in (+)" @click="$emit('zoom', 0.1)">
           <ZoomIn :size="18" :stroke-width="2" />
+          <span v-if="showShortcuts" class="kbd-bubble">+</span>
         </button>
         <button class="tool-button" type="button" title="Fit to screen" @click="$emit('fit')">
           <Maximize2 :size="18" :stroke-width="2" />
@@ -112,25 +122,31 @@
       <button class="tool-button" type="button" title="Import image" @click="$emit('upload')">
         <Upload :size="18" />
       </button>
+      <button class="tool-button relative" type="button" title="Keyboard shortcuts (?)" :class="{ 'tool-button-active': showShortcuts }" @click="$emit('toggle-help')">
+        <CircleHelp :size="18" />
+        <span v-if="showShortcuts" class="kbd-bubble">?</span>
+      </button>
       <button class="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-neutral-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" type="button" title="Copy image address (.png link)" :disabled="!canExport" @click="$emit('copy-link')">
         <Link :size="16" />
         Link
       </button>
-      <button class="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-neutral-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" type="button" title="Copy image (C)" :disabled="!canExport" @click="$emit('copy')">
+      <button class="relative inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-neutral-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" type="button" title="Copy image (C)" :disabled="!canExport" @click="$emit('copy')">
         <Copy :size="16" />
         Copy
+        <span v-if="showShortcuts" class="kbd-bubble">C</span>
       </button>
       <button class="inline-flex h-9 items-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40" type="button" :disabled="!canExport" @click="$emit('download')">
         <Download :size="16" />
         Save
       </button>
+      </div>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { ArrowRight, ChevronDown, Circle, Copy, Download, Link, Maximize2, Minimize2, Minus, MousePointer2, Pencil, Square, Type, Upload, ZoomIn, ZoomOut } from '@lucide/vue';
+import { ArrowRight, ChevronDown, Circle, CircleHelp, Copy, Download, Link, Maximize2, Minimize2, Minus, MousePointer2, Pencil, Square, Type, Upload, ZoomIn, ZoomOut } from '@lucide/vue';
 import type { DrawingStyle, Tool } from '../types';
 
 const props = withDefaults(defineProps<{
@@ -140,6 +156,7 @@ const props = withDefaults(defineProps<{
   recentStyles?: DrawingStyle[];
   zoom: number;
   canExport: boolean;
+  showShortcuts: boolean;
 }>(), {
   recentStyles: () => [],
 });
@@ -156,6 +173,7 @@ const emit = defineEmits<{
   copy: [];
   'copy-link': [];
   download: [];
+  'toggle-help': [];
 }>();
 
 const tools = [
@@ -167,6 +185,21 @@ const tools = [
   { id: 'pencil', label: 'Pencil', shortcut: 'P', icon: Pencil },
   { id: 'text', label: 'Text', shortcut: 'T', icon: Type },
 ] satisfies Array<{ id: Tool; label: string; shortcut: string; icon: unknown }>;
+
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+const shortcutLegend = isMac
+  ? [
+      { keys: '⌘Z', label: 'Undo' },
+      { keys: '⇧⌘Z', label: 'Redo' },
+      { keys: '⌫', label: 'Delete' },
+      { keys: 'Esc', label: 'Deselect' },
+    ]
+  : [
+      { keys: 'Ctrl+Z', label: 'Undo' },
+      { keys: 'Ctrl+Shift+Z', label: 'Redo' },
+      { keys: 'Del', label: 'Delete' },
+      { keys: 'Esc', label: 'Deselect' },
+    ];
 
 const popularColors = [
   { label: 'Red', value: '#ef4444' },
