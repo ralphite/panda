@@ -1,0 +1,82 @@
+name: win-install
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - 'install.ps1'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'embed.go'
+      - 'web/**'
+      - 'extension/**'
+      - '.github/workflows/win-install.yml'
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build web + panda.exe
+        shell: bash
+        run: |
+          (cd web && npm ci && npm run build)
+          go build -o panda.exe ./cmd/panda
+      - name: Syntax-check install.ps1
+        shell: pwsh
+        run: |
+          $e = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path ./install.ps1), [ref]$null, [ref]$e) | Out-Null
+          if ($e) { $e | ForEach-Object { Write-Error "$($_.Message) @ line $($_.Extent.StartLineNumber)" }; exit 1 }
+          'install.ps1 parses clean'
+      - name: Install (no autostart, no browser) and verify
+        shell: pwsh
+        env:
+          PANDA_LOCAL: '1'
+          PANDA_AUTOSTART: '0'
+          PANDA_OPEN: '0'
+        run: |
+          .\install.ps1
+          $code = (Invoke-WebRequest http://localhost:8088/screenshot -UseBasicParsing).StatusCode
+          if ($code -ne 200) { throw "screenshot status $code" }
+          $j = (Invoke-WebRequest http://localhost:8088/api/screenshots -UseBasicParsing).Content | ConvertFrom-Json
+          "screenshots = $($j.screenshots.Count)"
+          if (-not (Test-Path (Join-Path $env:LOCALAPPDATA 'Panda\extension\manifest.json'))) { throw 'extension not exported' }
+          'OK'
+
+  autostart:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build web + panda.exe
+        shell: bash
+        run: |
+          (cd web && npm ci && npm run build)
+          go build -o panda.exe ./cmd/panda
+      - name: Install with autostart, verify scheduled task, clean up
+        shell: pwsh
+        env:
+          PANDA_LOCAL: '1'
+          PANDA_AUTOSTART: '1'
+          PANDA_OPEN: '0'
+        run: |
+          .\install.ps1
+          $t = Get-ScheduledTask -TaskName Panda
+          "task state = $($t.State)"
+          $code = (Invoke-WebRequest http://localhost:8088/screenshot -UseBasicParsing).StatusCode
+          if ($code -ne 200) { throw "screenshot status $code" }
+          Stop-ScheduledTask -TaskName Panda -ErrorAction SilentlyContinue
+          Unregister-ScheduledTask -TaskName Panda -Confirm:$false
+          'OK'
