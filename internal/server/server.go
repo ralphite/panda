@@ -234,6 +234,11 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if id, ok := screenshotImageID(r.URL.Path); ok {
+		s.serveImage(w, r, id)
+		return
+	}
+
 	if served := s.tryServeStatic(w, r); served {
 		return
 	}
@@ -251,6 +256,22 @@ func (s *Server) handleApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeError(w, http.StatusNotFound, errors.New("not found"))
+}
+
+// screenshotImageID extracts the id from a direct image URL of the form
+// /screenshot/<id>.png. Such URLs are stable, shareable links that render the
+// raw image, whereas the page route /screenshot/<id> serves the SPA shell.
+func screenshotImageID(urlPath string) (string, bool) {
+	const prefix = "/screenshot/"
+	const suffix = ".png"
+	if !strings.HasPrefix(urlPath, prefix) || !strings.HasSuffix(urlPath, suffix) {
+		return "", false
+	}
+	id := urlPath[len(prefix) : len(urlPath)-len(suffix)]
+	if id == "" || strings.ContainsRune(id, '/') {
+		return "", false
+	}
+	return id, true
 }
 
 func (s *Server) tryServeStatic(w http.ResponseWriter, r *http.Request) bool {

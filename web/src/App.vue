@@ -16,6 +16,7 @@
       @actual-size="setZoom(1)"
       @upload="triggerUpload"
       @copy="copyImage"
+      @copy-link="copyImageAddress"
       @download="downloadImage"
     />
 
@@ -175,6 +176,7 @@ async function openScreenshot(id: string, push = true): Promise<void> {
     if (push) {
       history.pushState(null, '', shot.pageUrl);
     }
+    autoCopyImageAddress(shot);
   } catch (error) {
     setStatus(errorMessage(error));
   } finally {
@@ -254,6 +256,33 @@ async function copyImage(): Promise<void> {
   } catch (error) {
     setStatus(errorMessage(error));
   }
+}
+
+function imageAddress(shot: ScreenshotDetail): string {
+  return `${window.location.origin}/screenshot/${shot.id}.png`;
+}
+
+async function copyImageAddress(): Promise<void> {
+  const shot = activeScreenshot.value;
+  if (!shot) return;
+  try {
+    await navigator.clipboard.writeText(imageAddress(shot));
+    setStatus('Copied image address');
+  } catch (error) {
+    setStatus(errorMessage(error));
+  }
+}
+
+// Best-effort copy of the .png address when a screenshot opens, so the link is
+// ready to paste. Browsers may reject clipboard writes without a user gesture
+// (e.g. on a fresh page load); in that case we stay quiet and the Link button
+// remains available for an explicit copy.
+function autoCopyImageAddress(shot: ScreenshotDetail): void {
+  if (!navigator.clipboard) return;
+  void navigator.clipboard
+    .writeText(imageAddress(shot))
+    .then(() => setStatus('Copied image address'))
+    .catch(() => {});
 }
 
 async function downloadImage(): Promise<void> {

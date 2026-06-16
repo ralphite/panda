@@ -112,6 +112,10 @@
       <button class="tool-button" type="button" title="Import image" @click="$emit('upload')">
         <Upload :size="18" />
       </button>
+      <button class="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-neutral-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" type="button" title="Copy image address (.png link)" :disabled="!canExport" @click="$emit('copy-link')">
+        <Link :size="16" />
+        Link
+      </button>
       <button class="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-neutral-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" type="button" title="Copy image (C)" :disabled="!canExport" @click="$emit('copy')">
         <Copy :size="16" />
         Copy
@@ -126,7 +130,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { ArrowRight, ChevronDown, Circle, Copy, Download, Maximize2, Minimize2, Minus, MousePointer2, Pencil, Square, Type, Upload, ZoomIn, ZoomOut } from '@lucide/vue';
+import { ArrowRight, ChevronDown, Circle, Copy, Download, Link, Maximize2, Minimize2, Minus, MousePointer2, Pencil, Square, Type, Upload, ZoomIn, ZoomOut } from '@lucide/vue';
 import type { DrawingStyle, Tool } from '../types';
 
 const props = withDefaults(defineProps<{
@@ -150,6 +154,7 @@ const emit = defineEmits<{
   actualSize: [];
   upload: [];
   copy: [];
+  'copy-link': [];
   download: [];
 }>();
 
