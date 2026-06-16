@@ -218,6 +218,7 @@ async function storeCapture(captureKey, capture, tab) {
   await captureStore.putCapture({
     key: captureKey,
     imageBlob: capture.imageBlob,
+    elements: capture.elements ?? [],
     sourceUrl: capture.url || tab.url || '',
     pageTitle: capture.title || tab.title || '',
     serverOrigin: SERVER_ORIGIN,
@@ -269,7 +270,52 @@ async function captureVisiblePage(tab) {
     imageBlob: await dataURLToBlob(imageData),
     url: tab.url || '',
     title: tab.title || '',
+    elements: await collectVisibleElements(tab.id),
   };
+}
+
+// Collect bounding boxes of the elements visible in the viewport so the crop
+// tool can offer DevTools-style hover/click selection over the static
+// screenshot. Best effort: pages that block injection (PDF viewer, web store,
+// etc.) simply fall back to draw-only cropping.
+async function collectVisibleElements(tabId) {
+  if (!tabId) return [];
+  try {
+    return (await execute(tabId, collectElementRects)) || [];
+  } catch {
+    return [];
+  }
+}
+
+function collectElementRects() {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  if (!vw || !vh) return [];
+  const skip = new Set(['SCRIPT', 'STYLE', 'META', 'LINK', 'HEAD', 'TITLE', 'NOSCRIPT', 'TEMPLATE', 'SOURCE', 'TRACK', 'BR']);
+  const minPx = 8;
+  const maxRects = 4000;
+  const rects = [];
+  const all = document.querySelectorAll('*');
+  for (let i = 0; i < all.length && rects.length < maxRects; i += 1) {
+    const el = all[i];
+    if (skip.has(el.tagName)) continue;
+    const box = el.getBoundingClientRect();
+    if (!box || box.width < minPx || box.height < minPx) continue;
+    const left = Math.max(0, box.left);
+    const top = Math.max(0, box.top);
+    const right = Math.min(vw, box.right);
+    const bottom = Math.min(vh, box.bottom);
+    const w = right - left;
+    const h = bottom - top;
+    if (w < minPx || h < minPx) continue;
+    rects.push({
+      x: left / vw,
+      y: top / vh,
+      w: w / vw,
+      h: h / vh,
+    });
+  }
+  return rects;
 }
 
 async function captureFullPage(tab) {

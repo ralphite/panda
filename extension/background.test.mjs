@@ -8,6 +8,7 @@ const BACKGROUND_PATH = new URL('./background.js', import.meta.url).pathname;
 test('default action captures only the visible viewport', async () => {
   const { api, captures, metrics, restore, sessionStore } = await loadBackground({}, {
     captureVisibleDataUrl: 'data:image/png;base64,cG5n',
+    elementsResult: [{ x: 0, y: 0, w: 0.5, h: 0.5 }],
   });
   try {
     await api.onActionClicked({
@@ -20,7 +21,8 @@ test('default action captures only the visible viewport', async () => {
 
     const capture = Object.values(captures)[0];
     assert.equal(metrics.captureVisibleTabCalls, 1);
-    assert.equal(metrics.executeScriptCalls, 0);
+    assert.equal(metrics.executeScriptCalls, 1);
+    assert.deepEqual(capture.elements, [{ x: 0, y: 0, w: 0.5, h: 0.5 }]);
     assert.equal(capture.pageTitle, 'Visible page');
     assert.equal(capture.sourceUrl, 'https://example.test/visible');
     assert.equal(capture.imageBlob.size, 3);
@@ -33,6 +35,7 @@ test('default action captures only the visible viewport', async () => {
 test('keyboard command captures the visible viewport', async () => {
   const { api, captures, eventHandlers, metrics, restore, sessionStore } = await loadBackground({}, {
     captureVisibleDataUrl: 'data:image/png;base64,cG5n',
+    elementsResult: [{ x: 0.1, y: 0.2, w: 0.3, h: 0.4 }],
   });
   try {
     assert.equal(typeof eventHandlers.command, 'function');
@@ -46,7 +49,8 @@ test('keyboard command captures the visible viewport', async () => {
 
     const capture = Object.values(captures)[0];
     assert.equal(metrics.captureVisibleTabCalls, 1);
-    assert.equal(metrics.executeScriptCalls, 0);
+    assert.equal(metrics.executeScriptCalls, 1);
+    assert.deepEqual(capture.elements, [{ x: 0.1, y: 0.2, w: 0.3, h: 0.4 }]);
     assert.equal(capture.pageTitle, 'Shortcut page');
     assert.equal(capture.sourceUrl, 'https://example.test/shortcut');
     assert.equal(capture.imageBlob.size, 3);
@@ -268,8 +272,12 @@ async function loadBackground(initialStore, options = {}) {
     scripting: {
       executeScript: async ({ func }) => {
         metrics.executeScriptCalls += 1;
-        if (String(func).includes('scrollWidth')) {
+        const source = String(func);
+        if (source.includes('scrollWidth')) {
           return [{ result: options.metricsResult ?? null }];
+        }
+        if (source.includes('getBoundingClientRect')) {
+          return [{ result: options.elementsResult ?? [] }];
         }
         return [{ result: options.scrollResult ?? null }];
       },
