@@ -4,8 +4,6 @@ Panda Screenshot is a local screenshot capture and annotation app. It ships as a
 
 ![Panda Screenshot in action — capturing a page and annotating the screenshot](docs/demo.gif)
 
-![Panda Screenshot editor — a captured page annotated with rectangle, oval, line, arrow, pencil, and text tools](docs/demo.png)
-
 ## Install
 
 **macOS / Linux**
