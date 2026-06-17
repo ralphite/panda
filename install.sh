@@ -103,7 +103,7 @@ main() {
 	fi
 	case "$DATA" in
 		"~") DATA="$HOME" ;;
-		"~/"*) DATA="$HOME/${DATA#~/}" ;;
+		"~/"*) DATA="$HOME/${DATA#"~/"}" ;;
 	esac
 	mkdir -p "$DATA"
 	say "Data folder: $DATA"

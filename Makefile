@@ -1,4 +1,4 @@
-.PHONY: install build test run storybook release
+.PHONY: install build test test-install run storybook release
 
 install:
 	npm --prefix web install
@@ -11,6 +11,11 @@ build:
 test:
 	npm --prefix web test
 	go test ./...
+
+# End-to-end test of install.sh. Needs a built ./panda; the remote-download
+# case also uses dist/ (run `make release` first to cover it).
+test-install: build
+	sh scripts/test-install.sh
 
 run:
 	go run ./cmd/panda

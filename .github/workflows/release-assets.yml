@@ -1,0 +1,36 @@
+name: release-assets
+
+# Guards the exact failure that broke the hosted installer: a published release
+# with no binaries attached. install.sh pulls panda-<os>-<arch> from
+# releases/latest/download, so every release MUST carry all six builds.
+
+on:
+  release:
+    types: [published, edited]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to verify (e.g. v0.2.0)'
+        required: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all install.sh assets are attached
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          expected="panda-darwin-amd64 panda-darwin-arm64 panda-linux-amd64 panda-linux-arm64 panda-windows-amd64.exe panda-windows-arm64.exe"
+          have="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+          missing=
+          for a in $expected; do
+            printf '%s\n' "$have" | grep -qx "$a" || missing="$missing $a"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::release $TAG is missing assets:$missing"
+            echo "The one-line installer (curl … | sh) will 404. Re-run scripts/release.sh."
+            exit 1
+          fi
+          echo "release $TAG carries all six binaries — installer can resolve."

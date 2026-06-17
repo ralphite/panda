@@ -1,0 +1,58 @@
+name: unix-install
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - 'install.sh'
+      - 'scripts/test-install.sh'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'embed.go'
+      - 'web/**'
+      - 'extension/**'
+      - '.github/workflows/unix-install.yml'
+  pull_request:
+    paths:
+      - 'install.sh'
+      - 'scripts/test-install.sh'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'embed.go'
+      - 'web/**'
+      - 'extension/**'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck the installer and its tests
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y shellcheck
+          shellcheck -s sh install.sh scripts/test-install.sh
+
+  smoke:
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build web + panda
+        run: |
+          (cd web && npm ci && npm run build)
+          go build -o panda ./cmd/panda
+          # A current-platform release asset so the file:// download path runs.
+          GOOS=$(go env GOOS) GOARCH=$(go env GOARCH)
+          CGO_ENABLED=0 go build -o "dist/panda-$GOOS-$GOARCH" ./cmd/panda
+      - name: Run install.sh integration tests
+        run: sh scripts/test-install.sh
