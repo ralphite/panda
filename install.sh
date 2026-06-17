@@ -101,6 +101,9 @@ main() {
 	else
 		ask DATA "Data folder [$DEFAULT_DATA]: " "$DEFAULT_DATA"
 	fi
+	# Expand a literal leading ~ that the user typed or passed via PANDA_DATA.
+	# The quoted "~/" are literal match/strip patterns, not paths to expand.
+	# shellcheck disable=SC2088
 	case "$DATA" in
 		"~") DATA="$HOME" ;;
 		"~/"*) DATA="$HOME/${DATA#"~/"}" ;;

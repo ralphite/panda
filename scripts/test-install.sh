@@ -10,7 +10,8 @@
 # for the download-path cases, `make release` first — CI does both).
 set -eu
 
-ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+CDPATH=''  # keep `cd` from wandering or echoing if the caller exported CDPATH
+ROOT="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
 PORT=8088

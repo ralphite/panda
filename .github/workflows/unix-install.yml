@@ -30,7 +30,7 @@ jobs:
       - name: shellcheck the installer and its tests
         run: |
           sudo apt-get update -qq && sudo apt-get install -y shellcheck
-          shellcheck -s sh install.sh scripts/test-install.sh
+          shellcheck -s sh install.sh scripts/test-install.sh scripts/release.sh
 
   smoke:
     needs: lint
