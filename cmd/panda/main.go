@@ -20,7 +20,7 @@ import (
 const listenAddr = ":8088"
 
 func main() {
-	dataFlag := flag.String("data", "", "data directory (default ~/.panda, or %LocalAppData%\\Panda on Windows)")
+	dataFlag := flag.String("data", "", "data directory (default ~/panda, or %LocalAppData%\\Panda on Windows)")
 	webDir := flag.String("web", "", "serve the frontend from this directory instead of the embedded build (dev mode)")
 	exportExt := flag.String("export-extension", "", "write the bundled Chrome extension to this directory and exit")
 	flag.Parse()
@@ -86,7 +86,7 @@ func defaultDataDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".panda"), nil
+	return filepath.Join(home, "panda"), nil
 }
 
 func expandHome(p string) (string, error) {

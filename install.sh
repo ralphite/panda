@@ -5,7 +5,7 @@
 # Local use (now):      ./install.sh          (run from the repo, uses ./panda)
 #
 # Non-interactive overrides (also used for `curl | sh` without a tty):
-#   PANDA_DATA=<dir>        data directory          (default: ~/.panda)
+#   PANDA_DATA=<dir>        data directory          (default: ~/panda)
 #   PANDA_AUTOSTART=1|0     start at login + restart on crash
 #   PANDA_BIN_DIR=<dir>     where to install panda  (default: ~/.local/bin)
 #   PANDA_OPEN=1|0          open the browser        (default: 1)
@@ -17,7 +17,7 @@ PORT=8088
 URL="http://localhost:${PORT}/screenshot"
 BIN_DIR="${PANDA_BIN_DIR:-$HOME/.local/bin}"
 BIN="$BIN_DIR/panda"
-DEFAULT_DATA="$HOME/.panda"
+DEFAULT_DATA="$HOME/panda"
 RELEASE_BASE="${PANDA_RELEASE_BASE:-https://github.com/ralphite/panda/releases/latest/download}"
 # Skip touching shell rc files when the caller set a custom install dir.
 MANAGE_RC=1
@@ -252,12 +252,17 @@ summary() {
 	echo "  URL:        $URL"
 	echo "  Command:    $BIN  (run 'panda' once PATH is reloaded)"
 	echo "  Data:       $DATA"
-	echo "  Extension:  $EXT_DIR  (chrome://extensions -> Load unpacked)"
 	if [ "$AUTOSTART" = 1 ]; then
 		echo "  Auto-start: on (restarts on crash and at login)"
 	else
 		echo "  Auto-start: off — run 'panda' to start it again"
 	fi
+	echo
+	say "Last step — load the Chrome extension so you can capture screenshots:"
+	echo "    1. Open     chrome://extensions"
+	echo "    2. Turn on  Developer mode   (toggle, top-right)"
+	echo "    3. Click    Load unpacked"
+	echo "    4. Choose   $EXT_DIR"
 }
 
 main "$@"

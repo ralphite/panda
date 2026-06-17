@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/ralphite/panda/main/install.sh | sh
 irm https://raw.githubusercontent.com/ralphite/panda/main/install.ps1 | iex
 ```
 
-The installer asks where to keep data (default `~/.panda`, or `%LocalAppData%\Panda` on Windows), puts a `panda` command on your PATH, writes the Chrome extension into `<data>/extension`, optionally enables auto-start (launch at login + restart on crash), then runs Panda in the background and opens http://localhost:8088/screenshot.
+The installer asks where to keep data (default `~/panda`, or `%LocalAppData%\Panda` on Windows), puts a `panda` command on your PATH, writes the Chrome extension into `<data>/extension`, optionally enables auto-start (launch at login + restart on crash), then runs Panda in the background and opens http://localhost:8088/screenshot. It finishes by printing the steps to load the Chrome extension.
 
 Run `panda` any time to start it again.
 
